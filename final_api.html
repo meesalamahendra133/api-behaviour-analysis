@@ -1,0 +1,2731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>API Behaviour Analysis System</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Syne:wght@400;600;700;800&display=swap');
+
+  :root {
+    --bg: #040a0f;
+    --surface: #07121c;
+    --card: #0a1a27;
+    --border: #0d2a3f;
+    --border-glow: #0d4a6f;
+    --text: #c8e8f8;
+    --text-dim: #4a7a9a;
+    --text-muted: #2a4a5a;
+    --accent: #00e5ff;
+    --accent2: #ff4757;
+    --accent3: #ffa502;
+    --accent4: #2ed573;
+    --accent5: #ff6b81;
+    --glow: 0 0 20px rgba(0,229,255,0.15);
+    --glow-red: 0 0 20px rgba(255,71,87,0.2);
+    --glow-green: 0 0 20px rgba(46,213,115,0.15);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    overflow-x: hidden;
+    min-height: 100vh;
+  }
+
+  /* === SCANLINES & ATMOSPHERE === */
+  body::before {
+    content: '';
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,229,255,0.012) 2px, rgba(0,229,255,0.012) 4px);
+    pointer-events: none; z-index: 9999;
+  }
+
+  /* === LAYOUT === */
+  .shell {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    grid-template-rows: 48px 1fr;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* === TOP BAR === */
+  .topbar {
+    grid-column: 1 / -1;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 16px;
+    padding: 0 20px;
+    position: relative;
+  }
+  .topbar::after {
+    content: '';
+    position: absolute; bottom: -1px; left: 0; right: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity: 0.4;
+  }
+  .logo {
+    font-family: 'Syne', sans-serif;
+    font-size: 14px; font-weight: 800;
+    color: var(--accent);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .logo-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(0,229,255,0.4)} 50%{opacity:0.7;box-shadow:0 0 0 6px rgba(0,229,255,0)} }
+
+  .topbar-stats { display: flex; gap: 24px; margin-left: auto; }
+  .topstat { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-dim); }
+  .topstat span { color: var(--accent); font-weight: 600; }
+  .topstat.danger span { color: var(--accent2); }
+  .topstat.warn span { color: var(--accent3); }
+
+  .clock {
+    font-size: 11px; color: var(--text-dim);
+    border-left: 1px solid var(--border); padding-left: 16px;
+  }
+
+  /* === SIDEBAR === */
+  .sidebar {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 16px 0;
+    overflow-y: auto;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .sidebar-section { padding: 8px 16px 4px; font-size: 9px; color: var(--text-muted); letter-spacing: 0.15em; text-transform: uppercase; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 16px; cursor: pointer;
+    color: var(--text-dim); font-size: 12px;
+    border-left: 2px solid transparent;
+    transition: all 0.15s;
+    user-select: none;
+  }
+  .nav-item:hover { color: var(--text); background: rgba(0,229,255,0.03); }
+  .nav-item.active { color: var(--accent); border-left-color: var(--accent); background: rgba(0,229,255,0.05); }
+  .nav-icon { font-size: 14px; width: 18px; text-align: center; }
+  .nav-badge { margin-left: auto; background: var(--accent2); color: #fff; font-size: 9px; padding: 1px 5px; border-radius: 8px; font-weight: 700; }
+  .nav-badge.green { background: var(--accent4); }
+
+  /* === MAIN === */
+  .main {
+    overflow-y: auto;
+    background: var(--bg);
+    padding: 20px;
+    display: flex; flex-direction: column; gap: 20px;
+  }
+
+  /* === PAGE SECTIONS === */
+  .page { display: none; flex-direction: column; gap: 20px; }
+  .page.active { display: flex; }
+
+  /* === SECTION HEADER === */
+  .section-header {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 4px;
+  }
+  .section-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 18px; font-weight: 700;
+    color: #fff;
+  }
+  .section-sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+  .tag {
+    font-size: 9px; padding: 2px 8px; border-radius: 10px;
+    font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  }
+  .tag-live { background: rgba(46,213,115,0.15); color: var(--accent4); border: 1px solid rgba(46,213,115,0.3); }
+  .tag-alert { background: rgba(255,71,87,0.15); color: var(--accent2); border: 1px solid rgba(255,71,87,0.3); }
+
+  /* === KPI CARDS === */
+  .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .kpi-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    position: relative; overflow: hidden;
+    transition: border-color 0.3s;
+  }
+  .kpi-card:hover { border-color: var(--border-glow); }
+  .kpi-card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  }
+  .kpi-card.blue::before { background: linear-gradient(90deg, transparent, var(--accent), transparent); }
+  .kpi-card.red::before { background: linear-gradient(90deg, transparent, var(--accent2), transparent); }
+  .kpi-card.green::before { background: linear-gradient(90deg, transparent, var(--accent4), transparent); }
+  .kpi-card.orange::before { background: linear-gradient(90deg, transparent, var(--accent3), transparent); }
+  .kpi-label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
+  .kpi-value { font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800; color: #fff; }
+  .kpi-value.blue { color: var(--accent); }
+  .kpi-value.red { color: var(--accent2); }
+  .kpi-value.green { color: var(--accent4); }
+  .kpi-value.orange { color: var(--accent3); }
+  .kpi-delta { font-size: 10px; color: var(--text-dim); margin-top: 4px; }
+  .kpi-delta.up { color: var(--accent2); }
+  .kpi-delta.down { color: var(--accent4); }
+
+  /* === GRID LAYOUTS === */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid-3 { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+
+  /* === PANEL === */
+  .panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .panel-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+    font-size: 11px; color: var(--text-dim);
+    font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .panel-header .ph-title { color: var(--text); }
+  .panel-header .ph-actions { margin-left: auto; display: flex; gap: 8px; }
+  .panel-body { padding: 16px; }
+
+  /* === LIVE LOG TABLE === */
+  .log-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .log-table th {
+    text-align: left; padding: 6px 10px;
+    color: var(--text-muted); font-weight: 600;
+    border-bottom: 1px solid var(--border);
+    text-transform: uppercase; letter-spacing: 0.08em; font-size: 9px;
+  }
+  .log-table td { padding: 7px 10px; border-bottom: 1px solid rgba(13,42,63,0.5); }
+  .log-table tr:hover td { background: rgba(0,229,255,0.02); }
+  .log-table tr.anomaly td { background: rgba(255,71,87,0.05); }
+  .log-table tr.anomaly td:first-child { border-left: 2px solid var(--accent2); }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+  .s200 { background: var(--accent4); }
+  .s401 { background: var(--accent3); }
+  .s403 { background: var(--accent5); }
+  .s429 { background: var(--accent3); }
+  .s500 { background: var(--accent2); }
+  .risk-badge {
+    font-size: 9px; padding: 2px 7px; border-radius: 10px; font-weight: 700;
+  }
+  .risk-low { background: rgba(46,213,115,0.15); color: var(--accent4); }
+  .risk-med { background: rgba(255,165,2,0.15); color: var(--accent3); }
+  .risk-high { background: rgba(255,71,87,0.2); color: var(--accent2); }
+  .risk-crit { background: rgba(255,71,87,0.35); color: #ff8a8a; animation: blink 1s step-end infinite; }
+  @keyframes blink { 50%{opacity:0.5} }
+
+  /* === MINI CHART === */
+  .sparkline { display: flex; align-items: flex-end; gap: 2px; height: 40px; }
+  .spark-bar {
+    flex: 1; background: var(--accent);
+    opacity: 0.6; border-radius: 2px 2px 0 0;
+    transition: height 0.5s ease;
+  }
+  .spark-bar.anomaly { background: var(--accent2); opacity: 0.9; }
+
+  /* === SVG CHART === */
+  .chart-svg { width: 100%; overflow: visible; }
+
+  /* === THREAT MAP === */
+  .threat-list { display: flex; flex-direction: column; gap: 8px; }
+  .threat-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px;
+    background: rgba(7,18,28,0.6);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    transition: border-color 0.2s;
+    cursor: default;
+  }
+  .threat-item:hover { border-color: var(--border-glow); }
+  .threat-item.active-threat { border-color: rgba(255,71,87,0.3); animation: threat-pulse 2s infinite; }
+  @keyframes threat-pulse { 0%,100%{border-color:rgba(255,71,87,0.2)} 50%{border-color:rgba(255,71,87,0.5)} }
+  .threat-icon { font-size: 18px; width: 28px; text-align: center; }
+  .threat-info { flex: 1; }
+  .threat-name { font-size: 12px; color: var(--text); font-weight: 600; }
+  .threat-desc { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+  .threat-score { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800; }
+  .ts-low { color: var(--accent4); }
+  .ts-med { color: var(--accent3); }
+  .ts-high { color: var(--accent2); }
+  .ts-crit { color: var(--accent5); }
+
+  /* === ATTACK SIMULATOR === */
+  .sim-controls { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .sim-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px; padding: 14px;
+    cursor: pointer; transition: all 0.2s;
+    position: relative; overflow: hidden;
+  }
+  .sim-card:hover { border-color: var(--border-glow); transform: translateY(-1px); }
+  .sim-card:active { transform: translateY(0); }
+  .sim-card.running { border-color: var(--accent2); background: rgba(255,71,87,0.05); }
+  .sim-card::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(135deg, transparent 60%, rgba(0,229,255,0.03));
+    pointer-events: none;
+  }
+  .sim-name { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+  .sim-desc { font-size: 10px; color: var(--text-dim); line-height: 1.5; }
+  .sim-run-btn {
+    margin-top: 10px; padding: 6px 12px;
+    background: transparent; border: 1px solid var(--border-glow);
+    color: var(--accent); font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; border-radius: 4px; cursor: pointer;
+    transition: all 0.2s;
+  }
+  .sim-run-btn:hover { background: rgba(0,229,255,0.08); }
+  .sim-run-btn.running { border-color: var(--accent2); color: var(--accent2); animation: blink 0.8s step-end infinite; }
+
+  /* === TERMINAL / LOG STREAM === */
+  .terminal {
+    background: #020810;
+    border: 1px solid var(--border);
+    border-radius: 6px; padding: 14px;
+    font-size: 11px; line-height: 1.7;
+    height: 240px; overflow-y: auto;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .terminal::-webkit-scrollbar { width: 4px; }
+  .terminal::-webkit-scrollbar-track { background: transparent; }
+  .terminal::-webkit-scrollbar-thumb { background: var(--border-glow); border-radius: 2px; }
+  .t-ts { color: var(--text-muted); margin-right: 8px; }
+  .t-info { color: var(--accent); }
+  .t-warn { color: var(--accent3); }
+  .t-danger { color: var(--accent2); }
+  .t-success { color: var(--accent4); }
+  .t-normal { color: var(--text-dim); }
+
+  /* === PROGRESS BARS === */
+  .progress-list { display: flex; flex-direction: column; gap: 10px; }
+  .progress-item { }
+  .progress-label { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 10px; }
+  .progress-label span:first-child { color: var(--text-dim); }
+  .progress-bar-bg { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .progress-bar-fill { height: 100%; border-radius: 2px; transition: width 0.8s ease; }
+  .pb-blue { background: linear-gradient(90deg, var(--accent), #0090aa); }
+  .pb-red { background: linear-gradient(90deg, var(--accent2), #aa2030); }
+  .pb-green { background: linear-gradient(90deg, var(--accent4), #18804a); }
+  .pb-orange { background: linear-gradient(90deg, var(--accent3), #aa6000); }
+
+  /* === IP PROFILER === */
+  .ip-search-row { display: flex; gap: 8px; margin-bottom: 16px; }
+  .ip-input {
+    flex: 1; background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; padding: 8px 12px; border-radius: 4px;
+    outline: none; transition: border-color 0.2s;
+  }
+  .ip-input:focus { border-color: var(--border-glow); }
+  .btn {
+    background: transparent; border: 1px solid var(--accent);
+    color: var(--accent); font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; padding: 8px 16px; border-radius: 4px;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .btn:hover { background: rgba(0,229,255,0.08); }
+  .btn.danger { border-color: var(--accent2); color: var(--accent2); }
+  .btn.danger:hover { background: rgba(255,71,87,0.08); }
+  .btn.success { border-color: var(--accent4); color: var(--accent4); }
+
+  .profile-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px; padding: 16px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  }
+  .pf-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid rgba(13,42,63,0.5); }
+  .pf-key { color: var(--text-dim); font-size: 10px; }
+  .pf-val { color: var(--text); font-size: 11px; font-weight: 600; }
+
+  /* === ALERTS PANEL === */
+  .alert-feed { display: flex; flex-direction: column; gap: 8px; }
+  .alert-item {
+    display: flex; gap: 12px; padding: 12px;
+    background: var(--surface); border-radius: 4px;
+    border-left: 3px solid transparent; animation: slideIn 0.3s ease;
+  }
+  @keyframes slideIn { from{opacity:0;transform:translateX(-10px)} to{opacity:1;transform:none} }
+  .alert-item.crit { border-left-color: var(--accent2); background: rgba(255,71,87,0.05); }
+  .alert-item.high { border-left-color: var(--accent3); background: rgba(255,165,2,0.04); }
+  .alert-item.med { border-left-color: var(--accent); background: rgba(0,229,255,0.03); }
+  .alert-time { color: var(--text-muted); font-size: 10px; white-space: nowrap; }
+  .alert-body { flex: 1; }
+  .alert-title { font-size: 12px; color: #fff; font-weight: 600; }
+  .alert-detail { font-size: 10px; color: var(--text-dim); margin-top: 3px; }
+
+  /* === RULE EDITOR === */
+  .rule-list { display: flex; flex-direction: column; gap: 8px; }
+  .rule-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 4px;
+  }
+  .rule-toggle {
+    width: 32px; height: 18px; background: var(--border-glow);
+    border-radius: 9px; cursor: pointer; position: relative;
+    transition: background 0.2s; flex-shrink: 0;
+  }
+  .rule-toggle.on { background: var(--accent4); }
+  .rule-toggle::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 14px; height: 14px; background: #fff; border-radius: 50%;
+    transition: left 0.2s;
+  }
+  .rule-toggle.on::after { left: 16px; }
+  .rule-name { flex: 1; font-size: 11px; color: var(--text); }
+  .rule-thresh { font-size: 10px; color: var(--text-dim); }
+  .rule-action { font-size: 10px; color: var(--accent3); }
+
+  /* === SCROLL STYLING === */
+  .main::-webkit-scrollbar { width: 4px; }
+  .main::-webkit-scrollbar-track { background: transparent; }
+  .main::-webkit-scrollbar-thumb { background: var(--border-glow); border-radius: 2px; }
+
+  /* === RESPONSIVE SPARKLINE CANVAS === */
+  canvas.mini-chart { width: 100%; height: 60px; }
+
+  /* === ALERT NOTIFICATION === */
+  .notif {
+    position: fixed; top: 56px; right: 16px;
+    background: var(--card); border: 1px solid var(--accent2);
+    border-radius: 6px; padding: 12px 16px;
+    font-size: 11px; color: var(--text);
+    box-shadow: 0 4px 24px rgba(255,71,87,0.2);
+    z-index: 1000; max-width: 280px;
+    animation: notifIn 0.3s ease;
+    display: none;
+  }
+  @keyframes notifIn { from{transform:translateX(20px);opacity:0} to{transform:none;opacity:1} }
+  .notif-title { font-weight: 700; color: var(--accent2); margin-bottom: 4px; }
+
+  /* === ALERT COUNTDOWN TOAST === */
+  .alert-countdown-toast {
+    position: fixed; top: 56px; right: 16px;
+    background: var(--card); border: 1px solid var(--accent2);
+    border-radius: 8px; padding: 16px 18px;
+    font-size: 11px; color: var(--text);
+    box-shadow: 0 4px 32px rgba(255,71,87,0.35);
+    z-index: 2000; width: 320px;
+    animation: notifIn 0.3s ease;
+    display: none;
+  }
+  .act-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .act-icon { font-size: 18px; }
+  .act-title { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: var(--accent2); flex: 1; }
+  .act-body { font-size: 11px; color: var(--text-dim); margin-bottom: 12px; line-height: 1.5; }
+  .act-countdown-bar-bg { height: 4px; background: var(--border); border-radius: 2px; margin-bottom: 12px; overflow: hidden; }
+  .act-countdown-bar { height: 100%; background: linear-gradient(90deg, var(--accent2), #ff8a8a); border-radius: 2px; transition: width 0.9s linear; }
+  .act-countdown-label { font-size: 10px; color: var(--accent3); margin-bottom: 10px; text-align: center; }
+  .act-actions { display: flex; gap: 8px; }
+  .act-btn { flex: 1; padding: 7px 10px; font-family: 'JetBrains Mono', monospace; font-size: 10px; border-radius: 4px; cursor: pointer; transition: all 0.2s; }
+  .act-btn-ack { background: transparent; border: 1px solid var(--accent4); color: var(--accent4); }
+  .act-btn-ack:hover { background: rgba(46,213,115,0.1); }
+  .act-btn-email { background: rgba(255,71,87,0.15); border: 1px solid var(--accent2); color: var(--accent2); }
+  .act-btn-email:hover { background: rgba(255,71,87,0.25); }
+
+  /* === EMAIL SENT MODAL === */
+  .email-modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(4,10,15,0.85);
+    z-index: 3000; display: none;
+    align-items: center; justify-content: center;
+  }
+  .email-modal-overlay.show { display: flex; }
+  .email-modal {
+    background: var(--card); border: 1px solid var(--border-glow);
+    border-radius: 10px; padding: 28px 32px;
+    max-width: 420px; width: 90%;
+    animation: notifIn 0.3s ease;
+    box-shadow: 0 8px 48px rgba(0,229,255,0.12);
+    position: relative;
+  }
+  .em-icon { font-size: 36px; text-align: center; margin-bottom: 12px; }
+  .em-title { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 800; color: #fff; text-align: center; margin-bottom: 6px; }
+  .em-sub { font-size: 11px; color: var(--text-dim); text-align: center; margin-bottom: 18px; line-height: 1.6; }
+  .em-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; padding: 14px; font-size: 11px; margin-bottom: 18px;
+  }
+  .em-row { display: flex; gap: 8px; margin-bottom: 6px; }
+  .em-label { color: var(--text-muted); min-width: 70px; }
+  .em-value { color: var(--text); font-weight: 600; }
+  .em-value.red { color: var(--accent2); }
+  .em-value.cyan { color: var(--accent); }
+  .em-close { 
+    width: 100%; padding: 9px; background: transparent;
+    border: 1px solid var(--border-glow); color: var(--accent);
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    border-radius: 4px; cursor: pointer; transition: all 0.2s;
+  }
+  .em-close:hover { background: rgba(0,229,255,0.07); }
+
+  /* === SETTINGS === */
+  .setting-row {
+    display: flex; align-items: center; padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .setting-label { flex: 1; }
+  .setting-name { font-size: 12px; color: var(--text); }
+  .setting-desc { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+  input[type=range] { accent-color: var(--accent); width: 120px; }
+  select.styled {
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; padding: 4px 8px; border-radius: 4px; outline: none;
+  }
+
+  /* === TOOLTIP === */
+  [data-tip] { position: relative; cursor: help; }
+  [data-tip]:hover::after {
+    content: attr(data-tip);
+    position: absolute; bottom: calc(100% + 6px); left: 50%;
+    transform: translateX(-50%);
+    background: var(--card); border: 1px solid var(--border);
+    color: var(--text); font-size: 10px; padding: 4px 8px;
+    border-radius: 4px; white-space: nowrap; z-index: 100;
+  }
+
+  .empty-state { text-align: center; padding: 32px; color: var(--text-muted); }
+  .flex-center { display: flex; align-items: center; gap: 8px; }
+
+  .mini-traffic-chart { display: flex; align-items: flex-end; height: 50px; gap: 1px; padding: 4px 0; }
+  .mtc-bar { flex: 1; border-radius: 1px 1px 0 0; min-height: 2px; transition: height 0.4s; }
+
+  /* Geo map placeholder */
+  .geo-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+  }
+  .geo-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 4px;
+  }
+  .geo-flag { font-size: 16px; }
+  .geo-name { font-size: 10px; color: var(--text); }
+  .geo-count { margin-left: auto; font-size: 10px; color: var(--accent3); font-weight: 700; }
+  .geo-bar-bg { height: 2px; background: var(--border); border-radius: 1px; margin-top: 3px; }
+  .geo-bar-fill { height: 100%; background: var(--accent2); border-radius: 1px; }
+
+  /* === SEQUENCE ANALYZER === */
+  .seq-flow {
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .seq-item {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 10px 14px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; position: relative;
+    transition: border-color 0.2s;
+  }
+  .seq-item.danger { border-color: rgba(255,71,87,0.4); background: rgba(255,71,87,0.04); }
+  .seq-item.warn { border-color: rgba(255,165,2,0.3); background: rgba(255,165,2,0.03); }
+  .seq-step {
+    min-width: 24px; height: 24px; border-radius: 50%;
+    background: var(--border-glow); color: var(--accent);
+    font-size: 10px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; margin-top: 1px;
+  }
+  .seq-step.danger { background: rgba(255,71,87,0.3); color: var(--accent2); }
+  .seq-step.warn { background: rgba(255,165,2,0.2); color: var(--accent3); }
+  .seq-info { flex: 1; }
+  .seq-call { font-size: 12px; color: var(--text); font-weight: 600; font-family: 'JetBrains Mono', monospace; }
+  .seq-desc { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+  .seq-arrow { text-align: center; color: var(--text-muted); font-size: 12px; margin: -2px 0; }
+  .seq-badge { font-size: 9px; padding: 2px 8px; border-radius: 10px; font-weight: 700; margin-left: auto; white-space: nowrap; align-self: flex-start; margin-top: 3px; }
+  .seq-match-bar { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 10px; color: var(--text-dim); }
+  .seq-match-fill { height: 3px; border-radius: 2px; background: var(--accent2); flex: 1; }
+
+  /* === MALWARE BEHAVIOR === */
+  .malware-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; }
+  .malware-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; padding: 14px;
+    transition: border-color 0.2s;
+  }
+  .malware-card:hover { border-color: var(--border-glow); }
+  .malware-card.active { border-color: rgba(255,71,87,0.4); }
+  .mc-icon { font-size: 22px; margin-bottom: 8px; }
+  .mc-name { font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+  .mc-desc { font-size: 10px; color: var(--text-dim); line-height: 1.5; margin-bottom: 10px; }
+  .mc-apis { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+  .mc-api { font-size: 9px; padding: 2px 6px; background: rgba(0,229,255,0.08); border: 1px solid rgba(0,229,255,0.15); border-radius: 4px; color: var(--accent); font-family: 'JetBrains Mono', monospace; }
+  .mc-status { font-size: 10px; font-weight: 700; }
+  .mc-status.detected { color: var(--accent2); }
+  .mc-status.monitoring { color: var(--accent3); }
+  .mc-status.clean { color: var(--accent4); }
+  .mc-count { font-size: 20px; font-family: 'Syne', sans-serif; font-weight: 800; margin-top: 6px; }
+
+  /* === PRIVILEGE ESCALATION === */
+  .priv-timeline { display: flex; flex-direction: column; gap: 0; }
+  .priv-event {
+    display: flex; gap: 14px; padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+  .priv-event:last-child { border-bottom: none; }
+  .priv-line {
+    display: flex; flex-direction: column; align-items: center; gap: 0;
+    min-width: 28px;
+  }
+  .priv-dot {
+    width: 12px; height: 12px; border-radius: 50%;
+    border: 2px solid var(--border-glow);
+    background: var(--bg); flex-shrink: 0; margin-top: 3px;
+  }
+  .priv-dot.crit { border-color: var(--accent2); background: rgba(255,71,87,0.2); }
+  .priv-dot.high { border-color: var(--accent3); background: rgba(255,165,2,0.15); }
+  .priv-dot.ok { border-color: var(--accent4); background: rgba(46,213,115,0.15); }
+  .priv-connector { width: 2px; background: var(--border); flex: 1; min-height: 20px; margin-top: 2px; }
+  .priv-body { flex: 1; }
+  .priv-title { font-size: 12px; color: var(--text); font-weight: 600; }
+  .priv-detail { font-size: 10px; color: var(--text-dim); margin-top: 3px; }
+  .priv-time { font-size: 10px; color: var(--text-muted); white-space: nowrap; }
+  .priv-level-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+  .priv-level-from { font-size: 10px; color: var(--text-dim); padding: 2px 8px; background: var(--border); border-radius: 10px; }
+  .priv-arrow-icon { color: var(--accent2); font-size: 12px; }
+  .priv-level-to { font-size: 10px; color: var(--accent2); padding: 2px 8px; background: rgba(255,71,87,0.15); border-radius: 10px; font-weight: 700; }
+
+  /* === REPORTING === */
+  .report-header-bar {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 20px;
+  }
+  .report-kpi-row { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 20px; }
+  .report-section { margin-bottom: 20px; }
+  .report-section-title {
+    font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
+    color: var(--accent); margin-bottom: 10px;
+    padding-bottom: 6px; border-bottom: 1px solid var(--border);
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .finding-item {
+    display: flex; gap: 12px; padding: 10px 14px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; margin-bottom: 8px;
+  }
+  .finding-item.crit { border-left: 3px solid var(--accent2); }
+  .finding-item.high { border-left: 3px solid var(--accent3); }
+  .finding-item.med { border-left: 3px solid var(--accent); }
+  .finding-num { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800; color: var(--text-muted); min-width: 28px; }
+  .finding-body { flex: 1; }
+  .finding-title { font-size: 12px; color: #fff; font-weight: 600; margin-bottom: 3px; }
+  .finding-desc { font-size: 10px; color: var(--text-dim); line-height: 1.5; }
+  .finding-rec { font-size: 10px; color: var(--accent4); margin-top: 4px; }
+  .report-btn {
+    padding: 9px 20px; background: rgba(0,229,255,0.08);
+    border: 1px solid var(--accent); color: var(--accent);
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    border-radius: 4px; cursor: pointer; transition: all 0.2s;
+  }
+  .report-btn:hover { background: rgba(0,229,255,0.15); }
+  .report-btn.danger { border-color: var(--accent2); color: var(--accent2); background: rgba(255,71,87,0.08); }
+  .mitre-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; }
+  .mitre-item {
+    padding: 10px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; text-align: center;
+  }
+  .mitre-item.hit { border-color: rgba(255,71,87,0.35); background: rgba(255,71,87,0.05); }
+  .mitre-id { font-size: 10px; color: var(--accent); font-weight: 700; margin-bottom: 4px; }
+  .mitre-name { font-size: 9px; color: var(--text-dim); }
+  .mitre-item.hit .mitre-name { color: var(--accent2); }
+
+  /* === API CALL FLOW DIAGRAM === */
+  .flow-canvas-wrap {
+    width: 100%; overflow-x: auto;
+    background: #020810; border-radius: 6px;
+    padding: 20px 10px; position: relative;
+  }
+  #flow-canvas { display: block; margin: 0 auto; }
+  .flow-legend {
+    display: flex; gap: 16px; margin-top: 12px; flex-wrap: wrap;
+  }
+  .flow-legend-item {
+    display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--text-dim);
+  }
+  .flow-legend-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+  }
+  .flow-select-row {
+    display: flex; gap: 8px; margin-bottom: 14px; align-items: center;
+  }
+  .flow-select-label { font-size: 11px; color: var(--text-dim); }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- TOP BAR -->
+  <header class="topbar">
+    <div class="logo">
+      <div class="logo-dot"></div>
+      API·SHIELD
+    </div>
+    <span style="color:var(--text-muted);font-size:11px">API Call Behaviour Analysis System</span>
+    <div class="topbar-stats">
+      <div class="topstat" id="top-rps">RPS <span>—</span></div>
+      <div class="topstat danger"  >VULNERABILITIES 
+        <span>0</span>
+      </div>
+      <div class="topstat warn" id="top-blocks">BLOCKED <span>0</span></div>
+      <div class="topstat" id="top-uptime">UPTIME <span>100%</span></div>
+    </div>
+    <div class="clock" id="clock"></div>
+  </header>
+
+  <!-- SIDEBAR -->
+  <nav class="sidebar">
+    <div class="sidebar-section">Monitor</div>
+    <div class="nav-item active" data-page="dashboard" onclick="navigate('dashboard',this)">
+      <span class="nav-icon">◈</span> Dashboard
+    </div>
+    <div class="nav-item" data-page="logs" onclick="navigate('logs',this)">
+      <span class="nav-icon">≡</span> Live Logs
+      <span class="nav-badge green" id="nb-logs">0</span>
+    </div>
+    <div class="nav-item" data-page="threats" onclick="navigate('threats',this)">
+      <span class="nav-icon">⚠</span> Vulnerabilities
+      <span class="nav-badge" id="nb-threats">0</span>
+    </div>
+    <div class="sidebar-section">Analysis</div>
+    <div class="nav-item" data-page="profiler" onclick="navigate('profiler',this)">
+      <span class="nav-icon">◎</span> IP Profiler
+    </div>
+    <div class="nav-item" data-page="sequence" onclick="navigate('sequence',this)">
+      <span class="nav-icon">⛓</span> Seq Analyzer
+      <span class="nav-badge" id="nb-seq">0</span>
+    </div>
+    <div class="nav-item" data-page="malware" onclick="navigate('malware',this)">
+      <span class="nav-icon">🦠</span> Malware Behavior
+      <span class="nav-badge" id="nb-malware">0</span>
+    </div>
+    <div class="nav-item" data-page="privilege" onclick="navigate('privilege',this)">
+      <span class="nav-icon">🔐</span> Priv Escalation
+      <span class="nav-badge" id="nb-priv">0</span>
+    </div>
+    <div class="nav-item" data-page="simulator" onclick="navigate('simulator',this)">
+      <span class="nav-icon">▶</span> Attack Sim
+    </div>
+    <div class="nav-item" data-page="alerts" onclick="navigate('alerts',this)">
+      <span class="nav-icon">🔔</span> Alerts
+      <span class="nav-badge" id="nb-alerts">0</span>
+    </div>
+    <div class="sidebar-section">Config</div>
+    <div class="nav-item" data-page="rules" onclick="navigate('rules',this)">
+      <span class="nav-icon">⚙</span> Rules
+    </div>
+    <div class="nav-item" data-page="reporting" onclick="navigate('reporting',this)">
+      <span class="nav-icon">📋</span> Report
+    </div>
+    <div class="nav-item" data-page="settings" onclick="navigate('settings',this)">
+      <span class="nav-icon">◧</span> Settings
+    </div>
+  </nav>
+
+  <!-- MAIN CONTENT -->
+  <main class="main">
+
+    <!-- ===== PAGE: DASHBOARD ===== -->
+    <div class="page active" id="page-dashboard">
+      <div>
+        <div class="section-header">
+          <div>
+            <div class="section-title">Operations Dashboard</div>
+            <div class="section-sub">Real-time API traffic monitoring &amp; anomaly detection</div>
+          </div>
+          <span class="tag tag-live">● LIVE</span>
+        </div>
+      </div>
+
+      <div class="kpi-row">
+        <div class="kpi-card blue">
+          <div class="kpi-label">Total Requests</div>
+          <div class="kpi-value blue" id="kpi-total">0</div>
+          <div class="kpi-delta" id="kpi-total-d">—</div>
+        </div>
+        <div class="kpi-card red">
+          <div class="kpi-label">Anomalies Detected</div>
+          <div class="kpi-value red" id="kpi-anomalies">0</div>
+          <div class="kpi-delta up" id="kpi-anom-d">—</div>
+        </div>
+        <div class="kpi-card green">
+          <div class="kpi-label">IPs Blocked</div>
+          <div class="kpi-value green" id="kpi-blocked">0</div>
+          <div class="kpi-delta" id="kpi-block-d">—</div>
+        </div>
+        <div class="kpi-card orange">
+          <div class="kpi-label">Avg Risk Score</div>
+          <div class="kpi-value orange" id="kpi-risk">0</div>
+          <div class="kpi-delta" id="kpi-risk-d">/ 100</div>
+        </div>
+      </div>
+
+      <div class="grid-3">
+        <div class="panel">
+          <div class="panel-header">
+            <span class="ph-title">Traffic Volume — Last 60s</span>
+            <div class="ph-actions">
+              <span style="color:var(--accent);font-size:10px" id="rps-label">— req/s</span>
+            </div>
+          </div>
+          <div class="panel-body" style="padding:12px 16px">
+            <svg id="traffic-chart" class="chart-svg" viewBox="0 0 560 80" preserveAspectRatio="none" style="height:80px"></svg>
+            <div style="display:flex;justify-content:space-between;margin-top:4px;font-size:9px;color:var(--text-muted)">
+              <span>60s ago</span><span>45s</span><span>30s</span><span>15s</span><span>now</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header"><span class="ph-title">Threat Scores</span></div>
+          <div class="panel-body">
+            <div class="progress-list" id="threat-scores-list">
+              <div class="progress-item">
+                <div class="progress-label"><span>Brute Force</span><span id="pb-bf">0%</span></div>
+                <div class="progress-bar-bg"><div class="progress-bar-fill pb-red" id="pf-bf" style="width:0%"></div></div>
+              </div>
+              <div class="progress-item">
+                <div class="progress-label"><span>DDoS/Flood</span><span id="pb-ddos">0%</span></div>
+                <div class="progress-bar-bg"><div class="progress-bar-fill pb-orange" id="pf-ddos" style="width:0%"></div></div>
+              </div>
+              <div class="progress-item">
+                <div class="progress-label"><span>Scraping</span><span id="pb-scrape">0%</span></div>
+                <div class="progress-bar-bg"><div class="progress-bar-fill pb-blue" id="pf-scrape" style="width:0%"></div></div>
+              </div>
+              <div class="progress-item">
+                <div class="progress-label"><span>Replay Attack</span><span id="pb-replay">0%</span></div>
+                <div class="progress-bar-bg"><div class="progress-bar-fill pb-green" id="pf-replay" style="width:0%"></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-header"><span class="ph-title">Recent API Calls</span></div>
+          <div class="panel-body" style="padding:0">
+            <table class="log-table">
+              <thead>
+                <tr>
+                  <th>TIME</th><th>IP</th><th>ENDPOINT</th><th>METHOD</th><th>STATUS</th><th>RISK</th>
+                </tr>
+              </thead>
+              <tbody id="dash-log-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header"><span class="ph-title">Active Threat Profiles</span></div>
+          <div class="panel-body">
+            <div class="threat-list" id="threat-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== PAGE: LIVE LOGS ===== -->
+    <div class="page" id="page-logs">
+      <div>
+        <div class="section-title">Live API Log Stream</div>
+        <div class="section-sub">All incoming API calls — real-time ingestion with anomaly tagging</div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <span class="ph-title">Log Feed</span>
+          <div class="ph-actions">
+            <select class="styled" id="log-filter" onchange="filterLogs()">
+              <option value="all">All Status</option>
+              <option value="200">200 OK</option>
+              <option value="401">401 Unauth</option>
+              <option value="403">403 Forbidden</option>
+              <option value="429">429 Rate Limit</option>
+              <option value="500">500 Error</option>
+            </select>
+            <select class="styled" id="risk-filter" onchange="filterLogs()">
+              <option value="all">All Risk</option>
+              <option value="low">Low</option>
+              <option value="med">Medium</option>
+              <option value="high">High</option>
+              <option value="crit">Critical</option>
+            </select>
+            <button class="btn danger" onclick="clearLogs()">Clear</button>
+          </div>
+        </div>
+        <div style="padding:0">
+          <table class="log-table">
+            <thead>
+              <tr>
+                <th>TIMESTAMP</th><th>IP ADDRESS</th><th>ENDPOINT</th><th>METHOD</th>
+                <th>STATUS</th><th>LATENCY</th><th>PAYLOAD</th><th>RISK SCORE</th><th>FLAG</th>
+              </tr>
+            </thead>
+            <tbody id="full-log-tbody" style="max-height:500px;display:block;overflow-y:auto"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== PAGE: THREATS ===== -->
+    <div class="page" id="page-threats">
+      <div>
+        <div class="section-title">Vulnerabilities Intelligence</div>
+        <div class="section-sub">Classified attack types with real-time scoring and confidence levels</div>
+      </div>
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-header"><span class="ph-title">Detected Attack Vectors</span></div>
+          <div class="panel-body">
+            <div class="threat-list" id="threat-detail-list"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span class="ph-title">Top Attacking IPs</span></div>
+          <div class="panel-body">
+            <table class="log-table">
+              <thead><tr><th>IP</th><th>HITS</th><th>ATTACK TYPE</th><th>ACTION</th></tr></thead>
+              <tbody id="top-ips-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="ph-title">Geographic Origin of Suspicious Traffic</span></div>
+        <div class="panel-body">
+          <div class="geo-grid" id="geo-grid"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== PAGE: IP PROFILER ===== -->
+    <div class="page" id="page-profiler">
+      <div>
+        <div class="section-title">IP Behaviour Profiler</div>
+        <div class="section-sub">Deep-dive analysis of per-IP call patterns, baselines, and deviations</div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="ph-title">Query IP</span></div>
+        <div class="panel-body">
+          <div class="ip-search-row">
+            <input class="ip-input" id="ip-input" type="text" placeholder="Enter IP address (e.g. 192.168.1.100)" />
+            <button class="btn" onclick="profileIP()">Analyse</button>
+            <button class="btn" onclick="profileRandomIP()">Random IP</button>
+          </div>
+          <div id="profile-result"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== PAGE: ATTACK SIMULATOR ===== -->
+    <div class="page" id="page-simulator">
+      <div>
+        <div class="section-title">Attack Simulation Engine</div>
+        <div class="section-sub">Simulate real-world attack patterns to test detection &amp; response logic</div>
+      </div>
+      <div class="sim-controls">
+        <div class="sim-card" id="sim-brute">
+          <div class="sim-name">🔨 Brute Force Auth</div>
+          <div class="sim-desc">Rapid-fire POST /auth/login from a single IP with rotating credentials. Tests rate-limit and lockout thresholds.</div>
+          <button class="sim-run-btn" onclick="runSim('brute')">▶ Run Simulation</button>
+        </div>
+        <div class="sim-card" id="sim-ddos">
+          <div class="sim-name">💥 DDoS / Traffic Flood</div>
+          <div class="sim-desc">Thousands of requests/second from spoofed IPs targeting GET /prices. Tests volume spike detection.</div>
+          <button class="sim-run-btn" onclick="runSim('ddos')">▶ Run Simulation</button>
+        </div>
+        <div class="sim-card" id="sim-scrape">
+          <div class="sim-name">🕷 Data Scraping Bot</div>
+          <div class="sim-desc">Systematic enumeration of /orderbook, /prices, /wallets endpoints with robotic timing regularity.</div>
+          <button class="sim-run-btn" onclick="runSim('scrape')">▶ Run Simulation</button>
+        </div>
+        <div class="sim-card" id="sim-replay">
+          <div class="sim-name">🔁 Replay Attack</div>
+          <div class="sim-desc">Identical signed API requests replayed rapidly to /trade/execute. Tests nonce and timestamp validation.</div>
+          <button class="sim-run-btn" onclick="runSim('replay')">▶ Run Simulation</button>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <span class="ph-title">Simulation Output</span>
+          <div class="ph-actions"><button class="btn" onclick="clearTerminal()">Clear</button></div>
+        </div>
+        <div class="terminal" id="sim-terminal">
+          <div><span class="t-ts">00:00:00</span><span class="t-info">SYS</span> <span class="t-normal">Attack simulation engine ready. Select an attack vector above to begin.</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== PAGE: ALERTS ===== -->
+    <div class="page" id="page-alerts">
+      <div>
+        <div class="section-title">Alert Feed</div>
+        <div class="section-sub">Real-time security alerts with severity classification</div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <span class="ph-title">Active Alerts</span>
+          <div class="ph-actions">
+            <button class="btn success" onclick="clearAlerts()">Acknowledge All</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="alert-feed" id="alert-feed">
+            <div class="empty-state">No alerts — system nominal</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== PAGE: RULES ===== -->
+    <div class="page" id="page-rules">
+      <div>
+        <div class="section-title">Detection Rule Engine</div>
+        <div class="section-sub">Configure thresholds for automated anomaly detection &amp; response</div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="ph-title">Active Rules</span></div>
+        <div class="panel-body">
+          <div class="rule-list" id="rule-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== PAGE: SETTINGS ===== -->
+    <div class="page" id="page-settings">
+      <div>
+        <div class="section-title">System Configuration</div>
+        <div class="section-sub">Adjust detection sensitivity, response policies, and logging</div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="ph-title">Detection Parameters</span></div>
+        <div class="panel-body">
+          <div class="setting-row">
+            <div class="setting-label">
+              <div class="setting-name">Anomaly Sensitivity</div>
+              <div class="setting-desc">Z-score threshold for flagging deviations (lower = more sensitive)</div>
+            </div>
+            <input type="range" min="1" max="10" value="3" id="s-sensitivity" oninput="document.getElementById('sv-sensitivity').textContent=this.value">
+            <span style="color:var(--accent);font-size:12px;width:20px;margin-left:8px" id="sv-sensitivity">3</span>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <div class="setting-name">Rate Limit Threshold</div>
+              <div class="setting-desc">Max requests per minute per IP before triggering rate limit</div>
+            </div>
+            <input type="range" min="10" max="1000" step="10" value="100" id="s-ratelimit" oninput="document.getElementById('sv-ratelimit').textContent=this.value">
+            <span style="color:var(--accent);font-size:12px;width:40px;margin-left:8px" id="sv-ratelimit">100</span>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <div class="setting-name">Auto-Block Policy</div>
+              <div class="setting-desc">Automated response when risk score exceeds threshold</div>
+            </div>
+            <select class="styled">
+              <option>Block IP Permanently</option>
+              <option>Block for 1 Hour</option>
+              <option>Rate Limit Only</option>
+              <option>Challenge + CAPTCHA</option>
+            </select>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <div class="setting-name">Log Retention</div>
+              <div class="setting-desc">Number of log entries to keep in memory</div>
+            </div>
+            <input type="range" min="100" max="5000" step="100" value="1000" id="s-logs" oninput="document.getElementById('sv-logs').textContent=this.value">
+            <span style="color:var(--accent);font-size:12px;width:40px;margin-left:8px" id="sv-logs">1000</span>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <div class="setting-name">ML Model</div>
+              <div class="setting-desc">Anomaly detection model to use</div>
+            </div>
+            <select class="styled">
+              <option>Isolation Forest</option>
+              <option>Z-Score Analysis</option>
+              <option>LSTM (Sequential)</option>
+              <option>Ensemble (All)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== PAGE: SEQUENCE ANALYZER ===== -->
+    <div class="page" id="page-sequence">
+      <div>
+        <div class="section-title">API Call Sequence Analyzer</div>
+        <div class="section-sub">Correlates multi-step API call chains to known malware &amp; attack patterns</div>
+      </div>
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-header">
+            <span class="ph-title">Detected Attack Chains</span>
+            <div class="ph-actions"><span style="color:var(--accent);font-size:10px" id="seq-chain-count">0 chains</span></div>
+          </div>
+          <div class="panel-body">
+            <div class="seq-flow" id="seq-chain-list"><div class="empty-state">Monitoring API sequences…</div></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span class="ph-title">Known Attack Patterns Library</span></div>
+          <div class="panel-body">
+            <div class="seq-flow" id="seq-pattern-list"></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="ph-title">MITRE ATT&amp;CK Sequence Mapping</span></div>
+        <div class="panel-body">
+          <div class="mitre-grid" id="seq-mitre-grid"></div>
+        </div>
+      </div>
+
+      <!-- API CALL FLOW VISUALIZATION -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="ph-title">API Call Flow Visualizer</span>
+          <div class="ph-actions">
+            <span style="font-size:10px;color:var(--text-dim)">Select attack chain to visualize:</span>
+            <select class="styled" id="flow-chain-select" onchange="renderFlowDiagram()">
+              <option value="0">Account Takeover Chain</option>
+              <option value="1">Data Exfiltration Sequence</option>
+              <option value="2">Replay + Trade Manipulation</option>
+              <option value="3">Privilege Escalation via Token</option>
+            </select>
+            <button class="btn" onclick="animateFlow()">▶ Animate</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="flow-canvas-wrap">
+            <canvas id="flow-canvas" width="900" height="260"></canvas>
+          </div>
+          <div class="flow-legend">
+            <div class="flow-legend-item"><div class="flow-legend-dot" style="background:#00e5ff"></div>Normal API Call</div>
+            <div class="flow-legend-item"><div class="flow-legend-dot" style="background:#ffa502"></div>Suspicious Step</div>
+            <div class="flow-legend-item"><div class="flow-legend-dot" style="background:#ff4757"></div>Malicious / Blocked</div>
+            <div class="flow-legend-item"><div class="flow-legend-dot" style="background:#2ed573"></div>System Response</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== PAGE: MALWARE BEHAVIOR ===== -->
+    <div class="page" id="page-malware">
+      <div>
+        <div class="section-title">Malware Behavior Detection</div>
+        <div class="section-sub">Identifies suspicious API patterns: process injection, file manipulation &amp; unauthorized network communication</div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <span class="ph-title">Behavioral Signatures</span>
+          <div class="ph-actions"><span class="tag tag-live">● Scanning</span></div>
+        </div>
+        <div class="panel-body">
+          <div class="malware-grid" id="malware-grid"></div>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-header"><span class="ph-title">Process Injection Events</span></div>
+          <div class="panel-body" style="padding:0">
+            <table class="log-table">
+              <thead><tr><th>TIME</th><th>PROCESS</th><th>TECHNIQUE</th><th>TARGET API</th><th>RISK</th></tr></thead>
+              <tbody id="inject-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span class="ph-title">Unauthorized Network Communication</span></div>
+          <div class="panel-body" style="padding:0">
+            <table class="log-table">
+              <thead><tr><th>TIME</th><th>DEST IP</th><th>PORT</th><th>PROTOCOL</th><th>FLAG</th></tr></thead>
+              <tbody id="netcom-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== PAGE: PRIVILEGE ESCALATION ===== -->
+    <div class="page" id="page-privilege">
+      <div>
+        <div class="section-title">Privilege Escalation Monitor</div>
+        <div class="section-sub">Tracks unauthorized permission changes, token abuse, and role escalation attempts</div>
+      </div>
+      <div class="kpi-row" style="grid-template-columns:repeat(3,1fr)">
+        <div class="kpi-card red">
+          <div class="kpi-label">Escalation Attempts</div>
+          <div class="kpi-value red" id="priv-kpi-attempts">0</div>
+          <div class="kpi-delta up">this session</div>
+        </div>
+        <div class="kpi-card orange">
+          <div class="kpi-label">Suspicious Token Ops</div>
+          <div class="kpi-value orange" id="priv-kpi-tokens">0</div>
+          <div class="kpi-delta">token reuse / theft</div>
+        </div>
+        <div class="kpi-card green">
+          <div class="kpi-label">Blocked Escalations</div>
+          <div class="kpi-value green" id="priv-kpi-blocked">0</div>
+          <div class="kpi-delta down">auto-blocked</div>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-header"><span class="ph-title">Escalation Event Timeline</span></div>
+          <div class="panel-body">
+            <div class="priv-timeline" id="priv-timeline"><div class="empty-state">No escalation events detected</div></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span class="ph-title">Role &amp; Permission Abuse Map</span></div>
+          <div class="panel-body">
+            <div id="priv-role-map" style="display:flex;flex-direction:column;gap:10px"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== PAGE: REPORTING ===== -->
+    <div class="page" id="page-reporting">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:4px">
+        <div style="flex:1">
+          <div class="section-title">Security Analysis Report</div>
+          <div class="section-sub">Comprehensive findings, threat summary and remediation recommendations</div>
+        </div>
+        <button class="btn" onclick="generateReport()">↻ Refresh</button>
+        <button class="btn danger" onclick="exportReport()">⬇ Export</button>
+      </div>
+      <div class="kpi-row" id="report-kpis" style="grid-template-columns:repeat(3,1fr)"></div>
+      <div class="panel">
+        <div class="panel-header"><span class="ph-title">Executive Summary</span></div>
+        <div class="panel-body"><div id="report-summary" style="font-size:12px;color:var(--text-dim);line-height:1.8"></div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="ph-title">Critical Findings &amp; Recommendations</span></div>
+        <div class="panel-body"><div id="report-findings"></div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="ph-title">MITRE ATT&amp;CK Coverage</span></div>
+        <div class="panel-body"><div class="mitre-grid" id="report-mitre"></div></div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ALERT COUNTDOWN TOAST (10s auto-email if not acknowledged) -->
+<div class="alert-countdown-toast" id="alert-countdown-toast">
+  <div class="act-header">
+    <span class="act-icon">🚨</span>
+    <div class="act-title" id="act-title">Critical Alert</div>
+  </div>
+  <div class="act-body" id="act-body"></div>
+  <div class="act-countdown-label" id="act-countdown-label">Sending alert email in <b id="act-seconds">10</b>s if not acknowledged…</div>
+  <div class="act-countdown-bar-bg">
+    <div class="act-countdown-bar" id="act-countdown-bar" style="width:100%"></div>
+  </div>
+  <div class="act-actions">
+    <button class="act-btn act-btn-ack" onclick="acknowledgeAlert()">✔ Acknowledge</button>
+    <button class="act-btn act-btn-email" onclick="sendEmailNow()">✉ Send Email Now</button>
+  </div>
+</div>
+
+<!-- EMAIL SENT MODAL -->
+<div class="email-modal-overlay" id="email-modal-overlay">
+  <div class="email-modal">
+    <div class="em-icon">✉️</div>
+    <div class="em-title">Alert Email Sent</div>
+    <div class="em-sub">No response was received within 10 seconds.<br>The security alert has been automatically emailed to the team.</div>
+    <div class="em-card">
+      <div class="em-row"><span class="em-label">To:</span><span class="em-value cyan" id="em-to">maanvitha30@gmail.com</span></div>
+      <div class="em-row"><span class="em-label">Subject:</span><span class="em-value red" id="em-subject"></span></div>
+      <div class="em-row"><span class="em-label">Severity:</span><span class="em-value red" id="em-severity"></span></div>
+      <div class="em-row"><span class="em-label">Details:</span><span class="em-value" id="em-detail" style="font-size:10px;color:var(--text-dim)"></span></div>
+      <div class="em-row"><span class="em-label">Sent at:</span><span class="em-value" id="em-time"></span></div>
+    </div>
+    <button class="em-close" onclick="closeEmailModal()">✔ Dismiss</button>
+  </div>
+</div>
+
+<!-- NOTIFICATION TOAST -->
+<div class="notif" id="notif">
+  <div class="notif-title" id="notif-title"></div>
+  <div id="notif-body"></div>
+</div>
+
+<script>
+// ============================================================
+//  STATE
+// ============================================================
+const state = {
+  totalRequests: 0,
+  anomalies: 0,
+  blocked: 0,
+  avgRisk: 0,
+  riskSum: 0,
+  logs: [],
+  alerts: [],
+  activeThreats: [],      // rolling window of active HIGH/CRITICAL threats
+  ipProfiles: {},
+  threatCounts: { brute: 0, ddos: 0, scrape: 0, replay: 0 },
+  trafficHistory: Array(60).fill(0),
+  simRunning: null,
+  simIntervals: {},
+  rules: [
+    { id: 'r1', name: 'Brute Force — Login Flood', threshold: '> 20 req/min to /auth/login', action: 'Block IP', on: true },
+    { id: 'r2', name: 'DDoS Detection — Volume Spike', threshold: '> 500 req/min any IP', action: 'Rate Limit', on: true },
+    { id: 'r3', name: 'Scraping — Sequential Enumeration', threshold: 'Coefficient of Variation < 0.05', action: 'CAPTCHA', on: true },
+    { id: 'r4', name: 'Replay Attack — Duplicate Nonce', threshold: 'Identical request within 60s', action: 'Block Request', on: true },
+    { id: 'r5', name: 'Auth Anomaly — 401 Spike', threshold: '> 10 x 401 per IP per min', action: 'Alert + Block', on: true },
+    { id: 'r6', name: 'Latency Deviation — Z-Score', threshold: 'Z > 3.0 on response latency', action: 'Alert', on: false },
+  ]
+};
+
+const ENDPOINTS = [
+  '/api/v1/auth/login','/api/v1/auth/refresh','/api/v1/prices',
+  '/api/v1/orderbook','/api/v1/trade/execute','/api/v1/wallet/balance',
+  '/api/v1/wallet/withdraw','/api/v1/market/summary','/api/v1/user/profile',
+  '/api/v1/candles','/api/v1/depth','/api/v1/history'
+];
+const METHODS = ['GET','POST','PUT','DELETE'];
+const IPS = Array.from({length:25}, (_,i) => `${rn(10,220)}.${rn(1,255)}.${rn(1,255)}.${rn(1,254)}`);
+const ATTACK_IPS = ['185.220.101.45','194.61.24.102','45.142.212.200','91.108.4.100','103.224.182.55'];
+const GEO = [
+  {flag:'🇷🇺',name:'Russia',count:0},
+  {flag:'🇨🇳',name:'China',count:0},
+  {flag:'🇩🇪',name:'Germany (TOR)',count:0},
+  {flag:'🇳🇱',name:'Netherlands',count:0},
+  {flag:'🇺🇸',name:'United States',count:0},
+  {flag:'🇧🇷',name:'Brazil',count:0},
+];
+
+function rn(a,b){return Math.floor(Math.random()*(b-a+1))+a;}
+function rf(a,b){return (Math.random()*(b-a)+a).toFixed(2);}
+function now(){return new Date().toLocaleTimeString('en-GB',{hour12:false});}
+function nowMs(){return new Date().toISOString().split('T')[1].slice(0,12);}
+
+// ============================================================
+//  NAVIGATION
+// ============================================================
+function navigate(page, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-'+page).classList.add('active');
+  el.classList.add('active');
+  if(page==='threats') renderThreats();
+  if(page==='rules') renderRules();
+  if(page==='sequence') { renderSequencePage(); setTimeout(()=>renderFlowDiagram(), 100); }
+  if(page==='malware') renderMalwarePage();
+  if(page==='privilege') renderPrivPage();
+  if(page==='reporting') generateReport();
+}
+
+// ============================================================
+//  LOG GENERATION
+// ============================================================
+function generateLog(overrides = {}) {
+  const ip = overrides.ip || IPS[rn(0,IPS.length-1)];
+  const endpoint = overrides.endpoint || ENDPOINTS[rn(0,ENDPOINTS.length-1)];
+  const method = overrides.method || (endpoint.includes('login')||endpoint.includes('execute')||endpoint.includes('withdraw') ? 'POST' : 'GET');
+  const latency = overrides.latency || rn(8, 320);
+  const payload = overrides.payload || rn(64, 4096);
+  const status = overrides.status || weightedStatus();
+  const riskScore = overrides.riskScore || calcRisk({ip, endpoint, method, status, latency, payload});
+  const flag = overrides.flag || classifyThreat(riskScore, {ip, endpoint, method, status});
+
+  return { ts: nowMs(), ip, endpoint, method, status, latency, payload, riskScore, flag };
+}
+
+function weightedStatus() {
+  const r = Math.random();
+  if(r < 0.72) return 200;
+  if(r < 0.82) return 401;
+  if(r < 0.89) return 403;
+  if(r < 0.95) return 429;
+  return 500;
+}
+
+function calcRisk({ip, endpoint, method, status, latency, payload}) {
+  let score = 0;
+  if(ATTACK_IPS.includes(ip)) score += 40;
+  if(status === 401) score += 20;
+  if(status === 403) score += 15;
+  if(status === 429) score += 25;
+  if(status === 500) score += 10;
+  if(endpoint.includes('withdraw')) score += 15;
+  if(endpoint.includes('login') && method==='POST') score += 10;
+  if(latency > 200) score += 5;
+  if(payload > 3000) score += 5;
+  score += rn(0, 15);
+  return Math.min(100, score);
+}
+
+function classifyThreat(score, {ip, endpoint, method, status}) {
+  if(score >= 80) return 'CRITICAL';
+  if(score >= 60) return 'HIGH';
+  if(score >= 35) return 'MEDIUM';
+  return 'CLEAN';
+}
+
+function riskClass(flag) {
+  if(flag==='CRITICAL') return 'risk-crit';
+  if(flag==='HIGH') return 'risk-high';
+  if(flag==='MEDIUM') return 'risk-med';
+  return 'risk-low';
+}
+
+// ============================================================
+//  MAIN TICK — generates organic background traffic
+// ============================================================
+let tickCount = 0;
+setInterval(() => {
+  tickCount++;
+  const burstSize = rn(1, 4);
+  for(let i = 0; i < burstSize; i++) {
+    const log = generateLog();
+    processLog(log);
+  }
+  updateTrafficChart();
+  updateKPIs();
+  updateTopBar();
+
+  if(tickCount % 5 === 0) updateThreatScoreBars();
+}, 800);
+
+function processLog(log) {
+  state.totalRequests++;
+  state.logs.unshift(log);
+  if(state.logs.length > 2000) state.logs.pop();
+
+  const rps = Math.round(state.trafficHistory[59] || 1);
+  state.trafficHistory.push(rps + 1);
+  state.trafficHistory = state.trafficHistory.slice(-60);
+
+  if(log.flag !== 'CLEAN') {
+    state.anomalies++;
+    if(log.flag==='CRITICAL' || log.flag==='HIGH') {
+      state.blocked++;
+      GEO[rn(0,GEO.length-1)].count++;
+      trackAttackIP(log);
+      if(Math.random() < 0.4) generateAlert(log);
+      // Add to active threats window (expires after 30s)
+      state.activeThreats.push({ flag: log.flag, ts: Date.now() });
+      // New detectors
+      maybeDetectChain(log);
+      maybeGenerateMalwareEvent(log);
+      maybeGeneratePrivEvent(log);
+    }
+    if(log.flag==='MEDIUM' && Math.random() < 0.15) generateAlert(log);
+  }
+  // Expire threats older than 30 seconds
+  state.activeThreats = state.activeThreats.filter(t => Date.now() - t.ts < 30000);
+
+  state.riskSum += log.riskScore;
+  state.avgRisk = Math.round(state.riskSum / state.totalRequests);
+
+  renderDashLog(log);
+  renderFullLog(log);
+  updateBadges();
+}
+
+// ============================================================
+//  IP TRACKING
+// ============================================================
+function trackAttackIP(log) {
+  if(!state.ipProfiles[log.ip]) {
+    state.ipProfiles[log.ip] = {
+      ip: log.ip, hits: 0, anomalies: 0,
+      endpoints: {}, methods: {}, statuses: {},
+      avgLatency: 0, latSum: 0, firstSeen: log.ts, lastSeen: log.ts,
+      attackType: log.flag, riskPeak: 0
+    };
+  }
+  const p = state.ipProfiles[log.ip];
+  p.hits++;
+  if(log.flag !== 'CLEAN') p.anomalies++;
+  p.endpoints[log.endpoint] = (p.endpoints[log.endpoint]||0)+1;
+  p.methods[log.method] = (p.methods[log.method]||0)+1;
+  p.statuses[log.status] = (p.statuses[log.status]||0)+1;
+  p.latSum += log.latency;
+  p.avgLatency = Math.round(p.latSum / p.hits);
+  p.lastSeen = log.ts;
+  if(log.riskScore > p.riskPeak) p.riskPeak = log.riskScore;
+}
+
+// ============================================================
+//  DASHBOARD RENDERING
+// ============================================================
+function renderDashLog(log) {
+  const tbody = document.getElementById('dash-log-tbody');
+  const tr = document.createElement('tr');
+  if(log.flag !== 'CLEAN') tr.classList.add('anomaly');
+  tr.innerHTML = `
+    <td style="color:var(--text-muted)">${log.ts}</td>
+    <td style="color:${ATTACK_IPS.includes(log.ip)?'var(--accent2)':'var(--text)'}">${log.ip}</td>
+    <td style="color:var(--accent3)">${log.endpoint}</td>
+    <td>${log.method}</td>
+    <td><span class="status-dot s${log.status}"></span>${log.status}</td>
+    <td><span class="risk-badge ${riskClass(log.flag)}">${log.flag}</span></td>
+  `;
+  tbody.insertBefore(tr, tbody.firstChild);
+  while(tbody.rows.length > 8) tbody.deleteRow(tbody.rows.length-1);
+}
+
+function renderFullLog(log) {
+  const tbody = document.getElementById('full-log-tbody');
+  const f_status = document.getElementById('log-filter').value;
+  const f_risk = document.getElementById('risk-filter').value;
+
+  if(f_status !== 'all' && String(log.status) !== f_status) return;
+  if(f_risk !== 'all' && log.flag.toLowerCase() !== f_risk && 
+     !(f_risk==='high'&&log.flag==='HIGH') &&
+     !(f_risk==='crit'&&log.flag==='CRITICAL') &&
+     !(f_risk==='med'&&log.flag==='MEDIUM') &&
+     !(f_risk==='low'&&log.flag==='CLEAN')) return;
+
+  const tr = document.createElement('tr');
+  if(log.flag !== 'CLEAN') tr.classList.add('anomaly');
+  tr.innerHTML = `
+    <td style="color:var(--text-muted)">${log.ts}</td>
+    <td style="color:${ATTACK_IPS.includes(log.ip)?'var(--accent2)':'var(--text)'}">${log.ip}</td>
+    <td style="color:var(--accent3)">${log.endpoint}</td>
+    <td>${log.method}</td>
+    <td><span class="status-dot s${log.status}"></span>${log.status}</td>
+    <td>${log.latency}ms</td>
+    <td>${log.payload}B</td>
+    <td>${log.riskScore}</td>
+    <td><span class="risk-badge ${riskClass(log.flag)}">${log.flag}</span></td>
+  `;
+  tbody.insertBefore(tr, tbody.firstChild);
+  while(tbody.rows.length > 200) tbody.deleteRow(tbody.rows.length-1);
+}
+
+function filterLogs() {
+  // Re-render from state
+  const tbody = document.getElementById('full-log-tbody');
+  tbody.innerHTML = '';
+  const f_status = document.getElementById('log-filter').value;
+  const f_risk = document.getElementById('risk-filter').value;
+  const mapRisk = {'low':'CLEAN','med':'MEDIUM','high':'HIGH','crit':'CRITICAL'};
+  state.logs.slice(0,200).forEach(log => {
+    if(f_status !== 'all' && String(log.status) !== f_status) return;
+    if(f_risk !== 'all' && log.flag !== mapRisk[f_risk]) return;
+    const tr = document.createElement('tr');
+    if(log.flag !== 'CLEAN') tr.classList.add('anomaly');
+    tr.innerHTML = `
+      <td style="color:var(--text-muted)">${log.ts}</td>
+      <td>${log.ip}</td>
+      <td style="color:var(--accent3)">${log.endpoint}</td>
+      <td>${log.method}</td>
+      <td><span class="status-dot s${log.status}"></span>${log.status}</td>
+      <td>${log.latency}ms</td>
+      <td>${log.payload}B</td>
+      <td>${log.riskScore}</td>
+      <td><span class="risk-badge ${riskClass(log.flag)}">${log.flag}</span></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function clearLogs() {
+  document.getElementById('full-log-tbody').innerHTML = '';
+}
+
+// ============================================================
+//  TRAFFIC CHART (SVG Line Chart)
+// ============================================================
+function updateTrafficChart() {
+  const svg = document.getElementById('traffic-chart');
+  const w = 560, h = 80;
+  const data = state.trafficHistory;
+  const max = Math.max(...data, 1);
+
+  const points = data.map((v, i) => `${(i/(data.length-1))*w},${h - (v/max)*(h-8)}`).join(' ');
+  const areaPoints = `0,${h} ${points} ${w},${h}`;
+
+  svg.innerHTML = `
+    <defs>
+      <linearGradient id="tg" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#00e5ff" stop-opacity="0.25"/>
+        <stop offset="100%" stop-color="#00e5ff" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    <polygon points="${areaPoints}" fill="url(#tg)"/>
+    <polyline points="${points}" fill="none" stroke="#00e5ff" stroke-width="1.5" stroke-linejoin="round"/>
+    <circle cx="${(data.length-1)/(data.length-1)*w}" cy="${h - (data[data.length-1]/max)*(h-8)}" r="3" fill="#00e5ff"/>
+  `;
+  document.getElementById('rps-label').textContent = `${data[data.length-1]} req/s`;
+}
+
+// ============================================================
+//  KPI UPDATES
+// ============================================================
+function updateKPIs() {
+  document.getElementById('kpi-total').textContent = state.totalRequests.toLocaleString();
+  document.getElementById('kpi-anomalies').textContent = state.anomalies.toLocaleString();
+  document.getElementById('kpi-blocked').textContent = state.blocked.toLocaleString();
+  document.getElementById('kpi-risk').textContent = state.avgRisk;
+}
+
+function updateTopBar() {
+  const last = state.trafficHistory[state.trafficHistory.length-1];
+  document.getElementById('top-rps').querySelector('span').textContent = last;
+  document.getElementById('top-threats').querySelector('span').textContent = state.anomalies;
+  document.getElementById('top-blocks').querySelector('span').textContent = state.blocked;
+}
+
+function updateBadges() {
+  // Expire threats older than 30s
+  state.activeThreats = state.activeThreats.filter(t => Date.now() - t.ts < 30000);
+  document.getElementById('nb-logs').textContent = Math.min(state.logs.length, 60);
+  document.getElementById('nb-threats').textContent = state.activeThreats.length;
+  const ac = state.alerts.length; document.getElementById('nb-alerts').textContent = ac > 99 ? '99+' : ac;
+}
+
+// ============================================================
+//  THREAT SCORES
+// ============================================================
+function updateThreatScoreBars() {
+  const total = Object.values(state.threatCounts).reduce((a,b)=>a+b,0) || 1;
+  const types = ['bf','ddos','scrape','replay'];
+  const keys = ['brute','ddos','scrape','replay'];
+  types.forEach((t,i) => {
+    const pct = Math.round((state.threatCounts[keys[i]]/total)*100);
+    document.getElementById(`pb-${t}`).textContent = pct+'%';
+    document.getElementById(`pf-${t}`).style.width = pct+'%';
+  });
+
+  // Threat sidebar cards
+  const tl = document.getElementById('threat-list');
+  tl.innerHTML = `
+    <div class="threat-item active-threat">
+      <div class="threat-icon">🔨</div>
+      <div class="threat-info">
+        <div class="threat-name">Brute Force Auth</div>
+        <div class="threat-desc">${state.threatCounts.brute} events detected</div>
+      </div>
+      <div class="threat-score ts-high">${Math.min(100,state.threatCounts.brute*3)}</div>
+    </div>
+    <div class="threat-item">
+      <div class="threat-icon">💥</div>
+      <div class="threat-info">
+        <div class="threat-name">DDoS / Flood</div>
+        <div class="threat-desc">${state.threatCounts.ddos} events detected</div>
+      </div>
+      <div class="threat-score ts-crit">${Math.min(100,state.threatCounts.ddos*2)}</div>
+    </div>
+    <div class="threat-item">
+      <div class="threat-icon">🕷</div>
+      <div class="threat-info">
+        <div class="threat-name">Data Scraping</div>
+        <div class="threat-desc">${state.threatCounts.scrape} events detected</div>
+      </div>
+      <div class="threat-score ts-med">${Math.min(100,state.threatCounts.scrape*4)}</div>
+    </div>
+    <div class="threat-item">
+      <div class="threat-icon">🔁</div>
+      <div class="threat-info">
+        <div class="threat-name">Replay Attack</div>
+        <div class="threat-desc">${state.threatCounts.replay} events detected</div>
+      </div>
+      <div class="threat-score ts-low">${Math.min(100,state.threatCounts.replay*5)}</div>
+    </div>
+  `;
+}
+
+// ============================================================
+//  THREATS PAGE
+// ============================================================
+function renderThreats() {
+  const tl = document.getElementById('threat-detail-list');
+  const types = [
+    {icon:'🔨',name:'Brute Force',key:'brute',desc:'Credential stuffing via rapid POST /auth/login floods',score:Math.min(100,state.threatCounts.brute*3),cls:'ts-high'},
+    {icon:'💥',name:'DDoS/Flood',key:'ddos',desc:'High-volume GET spam targeting price/market endpoints',score:Math.min(100,state.threatCounts.ddos*2),cls:'ts-crit'},
+    {icon:'🕷',name:'Data Scraping',key:'scrape',desc:'Systematic enumeration with robotic inter-request timing',score:Math.min(100,state.threatCounts.scrape*4),cls:'ts-med'},
+    {icon:'🔁',name:'Replay Attack',key:'replay',desc:'Duplicate signed requests to /trade/execute endpoint',score:Math.min(100,state.threatCounts.replay*5),cls:'ts-low'},
+  ];
+  tl.innerHTML = types.map(t => `
+    <div class="threat-item">
+      <div class="threat-icon">${t.icon}</div>
+      <div class="threat-info">
+        <div class="threat-name">${t.name}</div>
+        <div class="threat-desc">${t.desc}</div>
+        <div style="margin-top:6px">
+          <div class="progress-bar-bg"><div class="progress-bar-fill pb-red" style="width:${t.score}%"></div></div>
+        </div>
+      </div>
+      <div style="text-align:right">
+        <div class="threat-score ${t.cls}">${t.score}</div>
+        <div style="font-size:9px;color:var(--text-muted)">${state.threatCounts[t.key]} events</div>
+      </div>
+    </div>
+  `).join('');
+
+  // Top IPs
+  const tbody = document.getElementById('top-ips-tbody');
+  const sorted = Object.values(state.ipProfiles).sort((a,b)=>b.hits-a.hits).slice(0,8);
+  tbody.innerHTML = sorted.map(p => `
+    <tr>
+      <td style="color:var(--accent2)">${p.ip}</td>
+      <td style="color:var(--accent3)">${p.hits}</td>
+      <td>${p.attackType}</td>
+      <td><button class="btn danger" style="padding:2px 8px;font-size:9px" onclick="blockIP('${p.ip}')">Block</button></td>
+    </tr>
+  `).join('') || '<tr><td colspan="4" class="empty-state">No data yet</td></tr>';
+
+  // Geo
+  const geoEl = document.getElementById('geo-grid');
+  const maxGeo = Math.max(...GEO.map(g=>g.count), 1);
+  geoEl.innerHTML = GEO.map(g => `
+    <div class="geo-item">
+      <div class="geo-flag">${g.flag}</div>
+      <div style="flex:1">
+        <div class="geo-name">${g.name}</div>
+        <div class="geo-bar-bg"><div class="geo-bar-fill" style="width:${Math.round((g.count/maxGeo)*100)}%"></div></div>
+      </div>
+      <div class="geo-count">${g.count}</div>
+    </div>
+  `).join('');
+}
+
+function blockIP(ip) {
+  showNotif('IP Blocked', `${ip} added to blocklist. All traffic dropped.`);
+}
+
+// ============================================================
+//  ALERTS
+// ============================================================
+const ALERT_MESSAGES = {
+  CRITICAL: [
+    'Brute force attack detected — {ip} hammering /auth/login',
+    'Critical flood from {ip} — {n} requests in 10 seconds',
+    'Credential stuffing attempt from {ip}',
+  ],
+  HIGH: [
+    'Suspicious enumeration from {ip} — scraping /orderbook',
+    'Replay attack signature from {ip} — duplicate nonce detected',
+    'Rate limit exceeded — {ip} throttled',
+  ],
+  MEDIUM: [
+    'Elevated error rate from {ip} — {n}x 401 in 60s',
+    'Unusual payload size spike from {ip}',
+    'Off-hours trading activity from {ip}',
+  ]
+};
+
+function generateAlert(log) {
+  const msgs = ALERT_MESSAGES[log.flag] || ALERT_MESSAGES['MEDIUM'];
+  const msg = msgs[rn(0,msgs.length-1)]
+    .replace('{ip}', log.ip)
+    .replace('{n}', rn(20,200));
+
+  const alert = {
+    id: Date.now(),
+    severity: log.flag,
+    title: msg,
+    detail: `Endpoint: ${log.endpoint} | Risk Score: ${log.riskScore} | Latency: ${log.latency}ms`,
+    time: log.ts
+  };
+  state.alerts.unshift(alert);
+
+  renderAlert(alert);
+  if(log.flag === 'CRITICAL') {
+    showNotif('🚨 Critical Alert', msg);
+    showAlertCountdown(alert);
+  } else if(log.flag === 'HIGH' && Math.random() < 0.3) {
+    showAlertCountdown(alert);
+  }
+}
+
+function renderAlert(alert) {
+  const feed = document.getElementById('alert-feed');
+  const empty = feed.querySelector('.empty-state');
+  if(empty) empty.remove();
+
+  const cls = alert.severity === 'CRITICAL' ? 'crit' : alert.severity === 'HIGH' ? 'high' : 'med';
+  const div = document.createElement('div');
+  div.className = `alert-item ${cls}`;
+  div.innerHTML = `
+    <div class="alert-time">${alert.time}</div>
+    <div class="alert-body">
+      <div class="alert-title">${alert.title}</div>
+      <div class="alert-detail">${alert.detail}</div>
+    </div>
+    <span class="risk-badge ${cls==='crit'?'risk-crit':cls==='high'?'risk-high':'risk-med'}">${alert.severity}</span>
+  `;
+  feed.insertBefore(div, feed.firstChild);
+  while(feed.children.length > 50) feed.removeChild(feed.lastChild);
+}
+
+function clearAlerts() {
+  state.alerts = [];
+  document.getElementById('alert-feed').innerHTML = '<div class="empty-state">All alerts acknowledged</div>';
+  document.getElementById('nb-alerts').textContent = '0';
+  clearCountdown();
+}
+
+// ============================================================
+//  IP PROFILER
+// ============================================================
+function profileRandomIP() {
+  const ips = Object.keys(state.ipProfiles);
+  if(!ips.length) { showNotif('No Data', 'Run the system for a bit first to collect IP data.'); return; }
+  const ip = ips[rn(0, ips.length-1)];
+  document.getElementById('ip-input').value = ip;
+  profileIP();
+}
+
+function profileIP() {
+  const ip = document.getElementById('ip-input').value.trim();
+  if(!ip) return;
+
+  const result = document.getElementById('profile-result');
+
+  // Build a synthetic or real profile
+  let p = state.ipProfiles[ip];
+  if(!p) {
+    // Synthetic profile for unknown IPs
+    p = {
+      ip, hits: rn(1,30), anomalies: 0,
+      endpoints: {'/api/v1/prices': rn(1,10)},
+      methods: {'GET': rn(1,20)},
+      statuses: {'200': rn(1,25), '404': rn(0,3)},
+      avgLatency: rn(20,150), firstSeen: '00:00:00', lastSeen: now(),
+      attackType: 'CLEAN', riskPeak: rn(0,20)
+    };
+  }
+
+  const topEndpoint = Object.entries(p.endpoints).sort((a,b)=>b[1]-a[1])[0]?.[0] || '—';
+  const topMethod = Object.entries(p.methods).sort((a,b)=>b[1]-a[1])[0]?.[0] || '—';
+  const anomalyPct = p.hits ? Math.round((p.anomalies/p.hits)*100) : 0;
+  const riskClass_ = p.riskPeak >= 80 ? 'red' : p.riskPeak >= 50 ? 'orange' : p.riskPeak >= 25 ? '' : 'green';
+
+  result.innerHTML = `
+    <div class="profile-card">
+      <div>
+        <div class="pf-row"><span class="pf-key">IP Address</span><span class="pf-val" style="color:var(--accent)">${p.ip}</span></div>
+        <div class="pf-row"><span class="pf-key">Total Requests</span><span class="pf-val">${p.hits}</span></div>
+        <div class="pf-row"><span class="pf-key">Anomalous Requests</span><span class="pf-val" style="color:var(--accent2)">${p.anomalies} (${anomalyPct}%)</span></div>
+        <div class="pf-row"><span class="pf-key">Peak Risk Score</span><span class="pf-val kpi-value ${riskClass_}" style="font-size:16px">${p.riskPeak}</span></div>
+        <div class="pf-row"><span class="pf-key">Attack Classification</span><span class="pf-val"><span class="risk-badge ${riskClass(p.attackType)}">${p.attackType}</span></span></div>
+      </div>
+      <div>
+        <div class="pf-row"><span class="pf-key">Avg Latency</span><span class="pf-val">${p.avgLatency}ms</span></div>
+        <div class="pf-row"><span class="pf-key">Top Endpoint</span><span class="pf-val" style="color:var(--accent3);font-size:10px">${topEndpoint}</span></div>
+        <div class="pf-row"><span class="pf-key">Primary Method</span><span class="pf-val">${topMethod}</span></div>
+        <div class="pf-row"><span class="pf-key">First Seen</span><span class="pf-val" style="color:var(--text-dim)">${p.firstSeen}</span></div>
+        <div class="pf-row"><span class="pf-key">Last Seen</span><span class="pf-val">${p.lastSeen}</span></div>
+      </div>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px">
+      <button class="btn danger" onclick="blockIP('${p.ip}')">Block IP</button>
+      <button class="btn" onclick="showNotif('Rate Limited','${p.ip} has been rate-limited to 10 req/min')">Rate Limit</button>
+      <button class="btn success" onclick="showNotif('Whitelisted','${p.ip} added to allowlist')">Whitelist</button>
+    </div>
+  `;
+}
+
+// ============================================================
+//  ATTACK SIMULATOR
+// ============================================================
+const SIM_SCRIPTS = {
+  brute: {
+    name: 'Brute Force',
+    logs: [
+      ['INFO','Starting brute force simulation on /api/v1/auth/login'],
+      ['WARN','Injecting 1 attacker IP: 185.220.101.45'],
+      ['DANGER','POST /auth/login — attempt 1 — 401 Unauthorized'],
+      ['DANGER','POST /auth/login — attempt 2 — 401 Unauthorized'],
+      ['DANGER','POST /auth/login — attempt 3 — 401 Unauthorized'],
+      ['DANGER','POST /auth/login — attempt 7 — 401 Unauthorized'],
+      ['WARN','RULE TRIGGERED: > 5 failed logins from same IP in 30s'],
+      ['DANGER','POST /auth/login — attempt 12 — 429 Too Many Requests'],
+      ['DANGER','POST /auth/login — attempt 15 — 403 Forbidden (IP Blocked)'],
+      ['SUCCESS','RESPONSE: IP 185.220.101.45 auto-blocked after 15 attempts'],
+      ['SUCCESS','Alert generated — Risk Score: 92 — Category: BRUTE_FORCE'],
+      ['INFO','Simulation complete. 15 requests injected. 1 IP blocked.'],
+    ],
+    attack: () => ({ip:'185.220.101.45', endpoint:'/api/v1/auth/login', method:'POST', status:401, latency:rn(50,200), payload:rn(128,512), riskScore:rn(75,98), flag:'CRITICAL'})
+  },
+  ddos: {
+    name: 'DDoS Flood',
+    logs: [
+      ['INFO','Initialising DDoS simulation — 50 spoofed IPs'],
+      ['WARN','Injecting traffic spike: 850 req/s targeting /api/v1/prices'],
+      ['DANGER','VOLUME ANOMALY: 14x above baseline (baseline: 60 req/s)'],
+      ['WARN','Z-score on request volume: 4.7 — THRESHOLD EXCEEDED'],
+      ['DANGER','Traffic flood detected — 3 IPs exceeding 200 req/10s'],
+      ['WARN','Auto rate-limiting 3 IPs to 10 req/min...'],
+      ['DANGER','Flood continuing — adding 47 more IPs to blocklist'],
+      ['SUCCESS','RULE TRIGGERED: DDoS detection — response engine activated'],
+      ['SUCCESS','Rate limiting applied — upstream load reduced by 82%'],
+      ['INFO','Simulation complete. 850 reqs injected. 50 IPs rate-limited.'],
+    ],
+    attack: () => ({ip:IPS[rn(0,IPS.length-1)], endpoint:'/api/v1/prices', method:'GET', status: Math.random()<0.3?429:200, latency:rn(300,2000), payload:rn(64,256), riskScore:rn(60,90), flag:'HIGH'})
+  },
+  scrape: {
+    name: 'Data Scraping',
+    logs: [
+      ['INFO','Deploying scraper bot simulation'],
+      ['WARN','Attacker IP: 194.61.24.102 — sequential enumeration started'],
+      ['NORMAL','GET /api/v1/orderbook?pair=BTC-USD — 200 OK'],
+      ['NORMAL','GET /api/v1/orderbook?pair=ETH-USD — 200 OK'],
+      ['NORMAL','GET /api/v1/prices — 200 OK'],
+      ['WARN','BEHAVIOURAL FLAG: Inter-request interval = 520ms (CV=0.02, robotic)'],
+      ['WARN','Endpoint enumeration pattern detected — 8 unique endpoints in 15s'],
+      ['DANGER','SCRAPING SIGNATURE: Regular timing + full dataset coverage'],
+      ['SUCCESS','CAPTCHA challenge issued to 194.61.24.102'],
+      ['SUCCESS','Alert generated — Category: DATA_SCRAPING — Risk Score: 71'],
+      ['INFO','Simulation complete. 24 requests injected. CAPTCHA triggered.'],
+    ],
+    attack: () => ({ip:'194.61.24.102', endpoint:ENDPOINTS[rn(0,ENDPOINTS.length-1)], method:'GET', status:200, latency:520+rn(-10,10), payload:rn(2048,4096), riskScore:rn(55,80), flag:'HIGH'})
+  },
+  replay: {
+    name: 'Replay Attack',
+    logs: [
+      ['INFO','Launching replay attack simulation on /api/v1/trade/execute'],
+      ['WARN','Capturing signed request with nonce: a3f7c9d2'],
+      ['NORMAL','POST /trade/execute — nonce:a3f7c9d2 — 200 OK (original)'],
+      ['DANGER','POST /trade/execute — nonce:a3f7c9d2 — REPLAY #1'],
+      ['DANGER','POST /trade/execute — nonce:a3f7c9d2 — REPLAY #2'],
+      ['DANGER','POST /trade/execute — nonce:a3f7c9d2 — REPLAY #3'],
+      ['WARN','RULE TRIGGERED: Duplicate nonce detected within 60s window'],
+      ['SUCCESS','Replay attempts 2-5 blocked — nonce invalidated'],
+      ['SUCCESS','Alert: REPLAY_ATTACK from 45.142.212.200 — Risk Score: 88'],
+      ['INFO','Simulation complete. 5 requests injected. 4 replays blocked.'],
+    ],
+    attack: () => ({ip:'45.142.212.200', endpoint:'/api/v1/trade/execute', method:'POST', status:rn(0,1)?403:200, latency:rn(80,180), payload:512, riskScore:rn(70,95), flag:'CRITICAL'})
+  }
+};
+
+function runSim(type) {
+  const script = SIM_SCRIPTS[type];
+  const terminal = document.getElementById('sim-terminal');
+  const card = document.getElementById('sim-'+type);
+  const btn = card.querySelector('.sim-run-btn');
+
+  if(state.simRunning === type) {
+    state.simRunning = null;
+    clearInterval(state.simIntervals[type]);
+    card.classList.remove('running');
+    btn.classList.remove('running');
+    btn.textContent = '▶ Run Simulation';
+    return;
+  }
+
+  state.simRunning = type;
+  card.classList.add('running');
+  btn.classList.add('running');
+  btn.textContent = '⏹ Stop';
+
+  terminal.innerHTML = '';
+
+  let step = 0;
+  const typeMap = { INFO:'t-info', WARN:'t-warn', DANGER:'t-danger', SUCCESS:'t-success', NORMAL:'t-normal' };
+
+  state.simIntervals[type] = setInterval(() => {
+    if(step < script.logs.length) {
+      const [lvl, msg] = script.logs[step];
+      const line = document.createElement('div');
+      line.innerHTML = `<span class="t-ts">${nowMs()}</span><span class="${typeMap[lvl]}">[${lvl}]</span> <span class="${typeMap[lvl]}">${msg}</span>`;
+      terminal.appendChild(line);
+      terminal.scrollTop = terminal.scrollHeight;
+
+      // Inject synthetic attack log
+      const attackLog = script.attack();
+      processLog(attackLog);
+      state.threatCounts[type]++;
+      step++;
+    } else {
+      clearInterval(state.simIntervals[type]);
+      state.simRunning = null;
+      card.classList.remove('running');
+      btn.classList.remove('running');
+      btn.textContent = '▶ Run Simulation';
+    }
+  }, 600);
+}
+
+function clearTerminal() {
+  document.getElementById('sim-terminal').innerHTML = '';
+}
+
+// ============================================================
+//  RULES ENGINE
+// ============================================================
+function renderRules() {
+  const list = document.getElementById('rule-list');
+  list.innerHTML = state.rules.map(r => `
+    <div class="rule-item">
+      <div class="rule-toggle ${r.on?'on':''}" onclick="toggleRule('${r.id}',this)"></div>
+      <div class="rule-name">${r.name}</div>
+      <div class="rule-thresh" style="min-width:180px">${r.threshold}</div>
+      <div class="rule-action">${r.action}</div>
+    </div>
+  `).join('');
+}
+
+function toggleRule(id, el) {
+  const rule = state.rules.find(r=>r.id===id);
+  if(rule) {
+    rule.on = !rule.on;
+    el.classList.toggle('on', rule.on);
+  }
+}
+
+// ============================================================
+//  NOTIFICATION TOAST
+// ============================================================
+let notifTimer;
+function showNotif(title, body) {
+  const el = document.getElementById('notif');
+  document.getElementById('notif-title').textContent = title;
+  document.getElementById('notif-body').textContent = body;
+  el.style.display = 'block';
+  clearTimeout(notifTimer);
+  notifTimer = setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
+
+// ============================================================
+//  ALERT COUNTDOWN — auto-email if no response in 10s
+// ============================================================
+let countdownInterval = null;
+let pendingAlertData = null;
+
+function showAlertCountdown(alert) {
+  // Don't stack countdowns — only one at a time
+  if(countdownInterval) return;
+
+  pendingAlertData = alert;
+  const toast = document.getElementById('alert-countdown-toast');
+  document.getElementById('act-title').textContent =
+    alert.severity === 'CRITICAL' ? '🚨 CRITICAL Security Alert' : '⚠ HIGH Severity Alert';
+  document.getElementById('act-body').textContent = alert.title;
+  document.getElementById('act-seconds').textContent = '10';
+  document.getElementById('act-countdown-bar').style.width = '100%';
+  toast.style.display = 'block';
+
+  let remaining = 10;
+  countdownInterval = setInterval(() => {
+    remaining--;
+    const el = document.getElementById('act-seconds');
+    if(el) el.textContent = remaining;
+    const bar = document.getElementById('act-countdown-bar');
+    if(bar) bar.style.width = (remaining / 10 * 100) + '%';
+
+    if(remaining <= 0) {
+      clearCountdown();
+      triggerEmailAlert(pendingAlertData);
+    }
+  }, 1000);
+}
+
+function clearCountdown() {
+  clearInterval(countdownInterval);
+  countdownInterval = null;
+  const toast = document.getElementById('alert-countdown-toast');
+  if(toast) toast.style.display = 'none';
+}
+
+function acknowledgeAlert() {
+  clearCountdown();
+  showNotif('✔ Alert Acknowledged', 'Alert has been acknowledged. Email suppressed.');
+  pendingAlertData = null;
+}
+
+function sendEmailNow() {
+  clearCountdown();
+  triggerEmailAlert(pendingAlertData);
+  pendingAlertData = null;
+}
+
+function triggerEmailAlert(alert) {
+  if(!alert) return;
+  const overlay = document.getElementById('email-modal-overlay');
+  document.getElementById('em-subject').textContent =
+    `[${alert.severity}] Security Alert — ${alert.title.slice(0, 60)}`;
+  document.getElementById('em-severity').textContent = alert.severity;
+  document.getElementById('em-detail').textContent = alert.detail;
+  document.getElementById('em-time').textContent = new Date().toLocaleTimeString('en-GB', {hour12:false});
+  overlay.classList.add('show');
+}
+
+function closeEmailModal() {
+  document.getElementById('email-modal-overlay').classList.remove('show');
+}
+
+// ============================================================
+//  SEQUENCE ANALYZER
+// ============================================================
+const ATTACK_SEQUENCES = [
+  {
+    id: 'seq1', name: 'Account Takeover Chain', severity: 'CRITICAL',
+    mitre: 'T1110 / T1078',
+    steps: [
+      { call: 'POST /api/v1/auth/login', desc: 'Credential stuffing — repeated failed logins', level: 'danger' },
+      { call: 'POST /api/v1/auth/refresh', desc: 'Token refresh after successful brute-force', level: 'warn' },
+      { call: 'GET /api/v1/user/profile', desc: 'Victim account enumeration', level: 'warn' },
+      { call: 'POST /api/v1/wallet/withdraw', desc: 'Immediate fund exfiltration', level: 'danger' },
+    ]
+  },
+  {
+    id: 'seq2', name: 'Data Exfiltration Sequence', severity: 'HIGH',
+    mitre: 'T1530 / T1213',
+    steps: [
+      { call: 'GET /api/v1/orderbook', desc: 'Full market data harvest — 1000s of records', level: 'warn' },
+      { call: 'GET /api/v1/prices', desc: 'Historical pricing bulk scrape', level: 'warn' },
+      { call: 'GET /api/v1/market/summary', desc: 'Aggregated market summary collection', level: 'warn' },
+      { call: 'POST /api/v1/depth', desc: 'Depth-of-book exfiltration attempt', level: 'danger' },
+    ]
+  },
+  {
+    id: 'seq3', name: 'Replay + Trade Manipulation', severity: 'CRITICAL',
+    mitre: 'T1499 / T1565',
+    steps: [
+      { call: 'POST /api/v1/trade/execute', desc: 'Legitimate signed trade request captured', level: 'warn' },
+      { call: 'POST /api/v1/trade/execute', desc: 'Replay #1 — duplicate nonce detected', level: 'danger' },
+      { call: 'POST /api/v1/trade/execute', desc: 'Replay #2 — market manipulation attempt', level: 'danger' },
+    ]
+  },
+  {
+    id: 'seq4', name: 'Privilege Escalation via Token Abuse', severity: 'HIGH',
+    mitre: 'T1134 / T1548',
+    steps: [
+      { call: 'POST /api/v1/auth/refresh', desc: 'Stolen refresh token reuse from separate IP', level: 'danger' },
+      { call: 'GET /api/v1/user/profile', desc: 'Admin flag enumeration attempt', level: 'warn' },
+      { call: 'PUT /api/v1/user/profile', desc: 'Unauthorized role modification', level: 'danger' },
+      { call: 'GET /api/v1/wallet/balance', desc: 'Access to elevated account resources', level: 'warn' },
+    ]
+  }
+];
+
+const MITRE_TECHNIQUES = [
+  { id:'T1110', name:'Brute Force', hit: false },
+  { id:'T1078', name:'Valid Accounts', hit: false },
+  { id:'T1530', name:'Data from Cloud', hit: false },
+  { id:'T1213', name:'Data from Repos', hit: false },
+  { id:'T1499', name:'Endpoint DoS', hit: false },
+  { id:'T1565', name:'Data Manipulation', hit: false },
+  { id:'T1134', name:'Token Impersonation', hit: false },
+  { id:'T1548', name:'Abuse Elevation', hit: false },
+  { id:'T1190', name:'Exploit Public App', hit: false },
+  { id:'T1071', name:'App Layer Protocol', hit: false },
+  { id:'T1055', name:'Process Injection', hit: false },
+  { id:'T1059', name:'Command & Script', hit: false },
+];
+
+let detectedChains = [];
+
+function renderSequencePage() {
+  // Pattern library
+  const patList = document.getElementById('seq-pattern-list');
+  patList.innerHTML = ATTACK_SEQUENCES.map(seq => `
+    <div class="seq-item ${seq.severity==='CRITICAL'?'danger':'warn'}">
+      <div class="seq-step ${seq.severity==='CRITICAL'?'danger':'warn'}">${seq.severity==='CRITICAL'?'!':'⚠'}</div>
+      <div class="seq-info">
+        <div class="seq-call">${seq.name}</div>
+        <div class="seq-desc">${seq.steps.length}-step chain · MITRE: ${seq.mitre}</div>
+        <div class="seq-match-bar">
+          <div class="seq-match-fill" style="width:${rn(30,95)}%;background:${seq.severity==='CRITICAL'?'var(--accent2)':'var(--accent3)'}"></div>
+          <span>${rn(30,95)}% match confidence</span>
+        </div>
+      </div>
+      <span class="seq-badge ${seq.severity==='CRITICAL'?'risk-crit':'risk-high'}">${seq.severity}</span>
+    </div>
+  `).join('');
+
+  // Chain list
+  renderChainList();
+
+  // MITRE grid
+  const mg = document.getElementById('seq-mitre-grid');
+  mg.innerHTML = MITRE_TECHNIQUES.map(t => `
+    <div class="mitre-item ${t.hit?'hit':''}">
+      <div class="mitre-id">${t.id}</div>
+      <div class="mitre-name">${t.name}</div>
+    </div>
+  `).join('');
+}
+
+function renderChainList() {
+  const list = document.getElementById('seq-chain-list');
+  const countEl = document.getElementById('seq-chain-count');
+  if(!detectedChains.length) {
+    list.innerHTML = '<div class="empty-state">Monitoring API sequences…</div>';
+    countEl.textContent = '0 chains';
+    return;
+  }
+  countEl.textContent = `${detectedChains.length} chain${detectedChains.length>1?'s':''}`;
+  list.innerHTML = detectedChains.slice(0,6).map(chain => {
+    const seq = ATTACK_SEQUENCES.find(s=>s.id===chain.seqId);
+    if(!seq) return '';
+    return `
+      <div class="seq-item danger">
+        <div class="seq-step danger">⛓</div>
+        <div class="seq-info">
+          <div class="seq-call">${seq.name}</div>
+          <div class="seq-desc">Detected from ${chain.ip} · ${chain.ts}</div>
+          ${seq.steps.map((s,i)=>`
+            <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
+              <span style="font-size:9px;color:var(--text-muted)">${i+1}.</span>
+              <span style="font-size:10px;color:${s.level==='danger'?'var(--accent2)':'var(--accent3)'};font-family:monospace">${s.call}</span>
+            </div>
+          `).join('')}
+        </div>
+        <span class="seq-badge risk-crit">${seq.severity}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+function maybeDetectChain(log) {
+  // Randomly attach a chain detection to HIGH/CRITICAL logs
+  if((log.flag === 'CRITICAL' || log.flag === 'HIGH') && Math.random() < 0.15) {
+    const seq = ATTACK_SEQUENCES[rn(0, ATTACK_SEQUENCES.length-1)];
+    detectedChains.unshift({ seqId: seq.id, ip: log.ip, ts: log.ts });
+    if(detectedChains.length > 20) detectedChains.pop();
+    // Mark MITRE techniques as hit
+    seq.mitre.split(' / ').forEach(mid => {
+      const t = MITRE_TECHNIQUES.find(t=>t.id===mid.trim());
+      if(t) t.hit = true;
+    });
+    document.getElementById('nb-seq').textContent = detectedChains.length;
+  }
+}
+
+// ============================================================
+//  MALWARE BEHAVIOR
+// ============================================================
+const MALWARE_SIGS = [
+  {
+    icon:'💉', name:'Process Injection',
+    desc:'WriteProcessMemory / VirtualAllocEx patterns detected in API call sequences',
+    apis:['VirtualAllocEx','WriteProcessMemory','CreateRemoteThread','NtMapViewOfSection'],
+    count:0, status:'monitoring'
+  },
+  {
+    icon:'📁', name:'File System Manipulation',
+    desc:'Suspicious file read/write/delete patterns across sensitive directories',
+    apis:['CreateFile','WriteFile','DeleteFile','MoveFile','SetFileAttributes'],
+    count:0, status:'monitoring'
+  },
+  {
+    icon:'🌐', name:'Unauthorized Network Comm',
+    desc:'Outbound connections to unknown C2 endpoints on non-standard ports',
+    apis:['WSAConnect','send','recv','HttpSendRequest','InternetOpen'],
+    count:0, status:'monitoring'
+  },
+  {
+    icon:'🔑', name:'Privilege Escalation API',
+    desc:'Token impersonation and privilege adjustment API calls detected',
+    apis:['AdjustTokenPrivileges','ImpersonateLoggedOnUser','SetTokenInformation'],
+    count:0, status:'monitoring'
+  },
+  {
+    icon:'🧬', name:'Code Injection / Shellcode',
+    desc:'Suspicious memory allocation and execution patterns',
+    apis:['VirtualProtect','HeapAlloc','RtlMoveMemory','NtCreateSection'],
+    count:0, status:'monitoring'
+  },
+  {
+    icon:'🕵️', name:'Persistence Mechanism',
+    desc:'Registry modification and startup manipulation detected',
+    apis:['RegSetValueEx','RegCreateKeyEx','CreateService','SHGetSpecialFolderPath'],
+    count:0, status:'monitoring'
+  }
+];
+
+const INJECT_TECHNIQUES = ['DLL Injection','Process Hollowing','Reflective Injection','APC Injection','Thread Hijacking'];
+const PROCESSES = ['svchost.exe','explorer.exe','lsass.exe','winlogon.exe','csrss.exe','notepad.exe'];
+const C2_IPS = ['185.220.101.45','91.108.4.100','198.51.100.42','203.0.113.77','45.33.32.156'];
+const PORTS = [4444, 8080, 443, 1337, 31337, 6666, 9001];
+const PROTOCOLS = ['TCP','HTTP/S','DNS-tunnel','ICMP','WebSocket'];
+
+let malwareEventCount = 0;
+let netComCount = 0;
+
+function renderMalwarePage() {
+  const grid = document.getElementById('malware-grid');
+  grid.innerHTML = MALWARE_SIGS.map((sig,i) => `
+    <div class="malware-card ${sig.count>0?'active':''}">
+      <div class="mc-icon">${sig.icon}</div>
+      <div class="mc-name">${sig.name}</div>
+      <div class="mc-desc">${sig.desc}</div>
+      <div class="mc-apis">${sig.apis.map(a=>`<span class="mc-api">${a}</span>`).join('')}</div>
+      <div class="mc-status ${sig.count>0?'detected':'monitoring'}">${sig.count>0?'⚠ DETECTED':'◉ Monitoring'}</div>
+      <div class="mc-count ${sig.count>0?'red':''}" style="color:${sig.count>0?'var(--accent2)':'var(--text-muted)'}">${sig.count}</div>
+    </div>
+  `).join('');
+}
+
+function maybeGenerateMalwareEvent(log) {
+  if(log.flag !== 'CRITICAL' && log.flag !== 'HIGH') return;
+  if(Math.random() > 0.2) return;
+
+  malwareEventCount++;
+  document.getElementById('nb-malware').textContent = malwareEventCount;
+
+  // Process injection event
+  if(Math.random() < 0.5) {
+    const sig = MALWARE_SIGS[rn(0, MALWARE_SIGS.length-1)];
+    sig.count++;
+    sig.status = 'detected';
+
+    const tbody = document.getElementById('inject-tbody');
+    if(tbody) {
+      const tech = INJECT_TECHNIQUES[rn(0,INJECT_TECHNIQUES.length-1)];
+      const proc = PROCESSES[rn(0,PROCESSES.length-1)];
+      const api = sig.apis[rn(0,sig.apis.length-1)];
+      const tr = document.createElement('tr');
+      tr.classList.add('anomaly');
+      tr.innerHTML = `
+        <td style="color:var(--text-muted)">${log.ts}</td>
+        <td style="color:var(--accent3)">${proc}</td>
+        <td style="color:var(--accent2)">${tech}</td>
+        <td style="font-family:monospace;font-size:10px;color:var(--accent)">${api}()</td>
+        <td><span class="risk-badge risk-crit">CRITICAL</span></td>
+      `;
+      tbody.insertBefore(tr, tbody.firstChild);
+      while(tbody.rows.length > 15) tbody.deleteRow(tbody.rows.length-1);
+    }
+  }
+
+  // Network communication event
+  if(Math.random() < 0.5) {
+    netComCount++;
+    const tbody = document.getElementById('netcom-tbody');
+    if(tbody) {
+      const destIP = C2_IPS[rn(0,C2_IPS.length-1)];
+      const port = PORTS[rn(0,PORTS.length-1)];
+      const proto = PROTOCOLS[rn(0,PROTOCOLS.length-1)];
+      const isSuspicious = port === 4444 || port === 1337 || port === 31337 || port === 6666;
+      const tr = document.createElement('tr');
+      tr.classList.add('anomaly');
+      tr.innerHTML = `
+        <td style="color:var(--text-muted)">${log.ts}</td>
+        <td style="color:var(--accent2)">${destIP}</td>
+        <td style="color:${isSuspicious?'var(--accent2)':'var(--accent3)'}">${port}</td>
+        <td>${proto}</td>
+        <td><span class="risk-badge ${isSuspicious?'risk-crit':'risk-high'}">${isSuspicious?'C2 BEACON':'SUSPECT'}</span></td>
+      `;
+      tbody.insertBefore(tr, tbody.firstChild);
+      while(tbody.rows.length > 15) tbody.deleteRow(tbody.rows.length-1);
+    }
+  }
+
+  // Re-render malware grid if page is active
+  if(document.getElementById('page-malware').classList.contains('active')) {
+    renderMalwarePage();
+  }
+}
+
+// ============================================================
+//  PRIVILEGE ESCALATION
+// ============================================================
+const PRIV_LEVELS = ['USER','OPERATOR','MANAGER','ADMIN','SUPERADMIN','ROOT'];
+const PRIV_EVENTS_TEMPLATES = [
+  { title:'Token Reuse from Foreign IP', detail:'Refresh token used from IP not matching original auth session', severity:'crit', from:'USER', to:'MANAGER' },
+  { title:'Admin Endpoint Access Attempt', detail:'Non-admin account attempting DELETE /api/v1/admin/users', severity:'crit', from:'OPERATOR', to:'ADMIN' },
+  { title:'Role Modification via PUT', detail:'PUT /api/v1/user/profile with role=admin field injection', severity:'crit', from:'USER', to:'ADMIN' },
+  { title:'JWT Algorithm Confusion Attack', detail:'alg:none in JWT header — signature bypass attempt', severity:'crit', from:'USER', to:'SUPERADMIN' },
+  { title:'Suspicious Refresh Token Chain', detail:'Refresh token reused 8 times in 30s window — possible theft', severity:'high', from:'USER', to:'OPERATOR' },
+  { title:'IDOR on Admin Resource', detail:'GET /api/v1/admin/settings with non-admin token', severity:'high', from:'USER', to:'MANAGER' },
+];
+
+let privEvents = [];
+let privAttempts = 0;
+let privTokens = 0;
+let privBlocked = 0;
+
+function maybeGeneratePrivEvent(log) {
+  if((log.flag==='CRITICAL'||log.flag==='HIGH') && Math.random()<0.12) {
+    const tmpl = PRIV_EVENTS_TEMPLATES[rn(0,PRIV_EVENTS_TEMPLATES.length-1)];
+    const evt = { ...tmpl, ip: log.ip, ts: log.ts, blocked: Math.random()<0.7 };
+    privEvents.unshift(evt);
+    if(privEvents.length > 20) privEvents.pop();
+    privAttempts++;
+    privTokens += rn(1,3);
+    if(evt.blocked) privBlocked++;
+
+    document.getElementById('nb-priv').textContent = privAttempts;
+    document.getElementById('priv-kpi-attempts').textContent = privAttempts;
+    document.getElementById('priv-kpi-tokens').textContent = privTokens;
+    document.getElementById('priv-kpi-blocked').textContent = privBlocked;
+
+    if(document.getElementById('page-privilege').classList.contains('active')) {
+      renderPrivPage();
+    }
+  }
+}
+
+function renderPrivPage() {
+  // Timeline
+  const tl = document.getElementById('priv-timeline');
+  if(!privEvents.length) {
+    tl.innerHTML = '<div class="empty-state">No escalation events detected</div>';
+  } else {
+    tl.innerHTML = privEvents.slice(0,10).map((e,i) => `
+      <div class="priv-event">
+        <div class="priv-line">
+          <div class="priv-dot ${e.severity}"></div>
+          ${i < privEvents.length-1 ? '<div class="priv-connector"></div>' : ''}
+        </div>
+        <div class="priv-body">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div class="priv-title">${e.title}</div>
+            <span class="priv-time">${e.ts}</span>
+          </div>
+          <div class="priv-detail">${e.detail} · IP: ${e.ip}</div>
+          <div class="priv-level-row">
+            <span class="priv-level-from">${e.from}</span>
+            <span class="priv-arrow-icon">→</span>
+            <span class="priv-level-to">${e.to}</span>
+            <span style="margin-left:auto;font-size:10px;color:${e.blocked?'var(--accent4)':'var(--accent2)'}">${e.blocked?'✔ BLOCKED':'✘ SUCCEEDED'}</span>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // Role abuse map
+  const roleMap = document.getElementById('priv-role-map');
+  const roleCounts = {};
+  privEvents.forEach(e => { roleCounts[e.to] = (roleCounts[e.to]||0)+1; });
+  const roles = PRIV_LEVELS.filter(l=>roleCounts[l]).sort((a,b)=>(roleCounts[b]||0)-(roleCounts[a]||0));
+  if(!roles.length) {
+    roleMap.innerHTML = '<div class="empty-state">No role abuse detected yet</div>';
+  } else {
+    const maxCount = Math.max(...roles.map(r=>roleCounts[r]));
+    roleMap.innerHTML = roles.map(role => `
+      <div>
+        <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:4px">
+          <span style="color:var(--accent2);font-weight:700">${role}</span>
+          <span style="color:var(--text-muted)">${roleCounts[role]} attempt${roleCounts[role]>1?'s':''}</span>
+        </div>
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill pb-red" style="width:${Math.round(roleCounts[role]/maxCount*100)}%"></div>
+        </div>
+      </div>
+    `).join('');
+  }
+}
+
+// ============================================================
+//  REPORTING
+// ============================================================
+function generateReport() {
+  const critCount = state.alerts.filter(a=>a.severity==='CRITICAL').length;
+  const highCount = state.alerts.filter(a=>a.severity==='HIGH').length;
+  const anomalyRate = state.totalRequests ? Math.round((state.anomalies/state.totalRequests)*100) : 0;
+
+  // KPIs
+  document.getElementById('report-kpis').innerHTML = `
+    <div class="kpi-card red">
+      <div class="kpi-label">Critical Findings</div>
+      <div class="kpi-value red">${critCount}</div>
+      <div class="kpi-delta up">require immediate action</div>
+    </div>
+    <div class="kpi-card orange">
+      <div class="kpi-label">High Risk Events</div>
+      <div class="kpi-value orange">${highCount}</div>
+      <div class="kpi-delta">elevated attention needed</div>
+    </div>
+    <div class="kpi-card blue">
+      <div class="kpi-label">Anomaly Rate</div>
+      <div class="kpi-value blue">${anomalyRate}%</div>
+      <div class="kpi-delta">of all API traffic</div>
+    </div>
+  `;
+
+  // Summary
+  document.getElementById('report-summary').innerHTML = `
+    <p style="margin-bottom:10px">
+      Analysis period: <span style="color:var(--accent)">${new Date().toLocaleDateString()}</span> · 
+      Total requests analysed: <span style="color:var(--accent)">${state.totalRequests.toLocaleString()}</span> · 
+      System: <span style="color:var(--accent)">API Shield v2.0</span>
+    </p>
+    <p style="margin-bottom:10px">
+      During the monitored period, the system detected <span style="color:var(--accent2);font-weight:700">${state.anomalies} anomalous API calls</span> 
+      representing ${anomalyRate}% of total traffic. 
+      ${critCount} critical-severity alerts were generated requiring immediate response. 
+      ${detectedChains.length} multi-step attack sequences were correlated across ${Object.keys(state.ipProfiles).length} unique IP profiles.
+    </p>
+    <p style="margin-bottom:10px">
+      Key attack vectors identified: 
+      <span style="color:var(--accent3)">Brute Force (${state.threatCounts.brute} events)</span>, 
+      <span style="color:var(--accent3)">DDoS/Flood (${state.threatCounts.ddos} events)</span>, 
+      <span style="color:var(--accent3)">Data Scraping (${state.threatCounts.scrape} events)</span>, 
+      <span style="color:var(--accent3)">Replay Attacks (${state.threatCounts.replay} events)</span>.
+      Additionally, <span style="color:var(--accent2)">${malwareEventCount} malware behavioral signatures</span> and 
+      <span style="color:var(--accent2)">${privAttempts} privilege escalation attempts</span> were flagged.
+    </p>
+    <p style="color:var(--accent4)">
+      ${privBlocked} privilege escalation attempts were automatically blocked. 
+      Recommend immediate review of flagged IPs and audit of authentication token policies.
+    </p>
+  `;
+
+  // Findings
+  const findings = [
+    { cls:'crit', title:'Credential Stuffing & Brute Force on /auth/login', desc:`${state.threatCounts.brute} brute force events detected. Multiple IPs exceeding 20 failed auth attempts per minute. Strongest signal from ATTACK_IP list.`, rec:'Recommendation: Implement progressive lockout, MFA enforcement, and IP-based geo-blocking.' },
+    { cls:'crit', title:`${detectedChains.length} Multi-Step Attack Chains Correlated`, desc:'Sequential API call patterns matching Account Takeover, Data Exfiltration, and Replay Attack chains were identified across monitored sessions.', rec:'Recommendation: Deploy behavioral sequence monitoring and session-based anomaly correlation.' },
+    { cls:'high', title:`${malwareEventCount} Malware Behavioral Signatures Detected`, desc:'Process injection, unauthorized network communication, and persistence mechanism API patterns observed. C2 beacon activity suspected from flagged IPs.', rec:'Recommendation: Isolate affected processes, block C2 IPs at firewall, conduct endpoint forensics.' },
+    { cls:'high', title:`${privAttempts} Privilege Escalation Attempts`, desc:`${privBlocked} were auto-blocked. JWT algorithm confusion, IDOR, and role injection techniques observed. Token theft suspected in ${Math.round(privAttempts*0.4)} cases.`, rec:'Recommendation: Enforce strict JWT validation, implement RBAC auditing, rotate all active tokens.' },
+    { cls:'med', title:'DDoS & Traffic Flooding', desc:`${state.threatCounts.ddos} flood events recorded. Peak volume spike of ~14x above baseline. Rate limiting mitigated majority of requests.`, rec:'Recommendation: Increase rate limit granularity, add CAPTCHA for volume threshold breaches.' },
+  ];
+  document.getElementById('report-findings').innerHTML = findings.map((f,i) => `
+    <div class="finding-item ${f.cls}">
+      <div class="finding-num">0${i+1}</div>
+      <div class="finding-body">
+        <div class="finding-title">${f.title}</div>
+        <div class="finding-desc">${f.desc}</div>
+        <div class="finding-rec">▶ ${f.rec}</div>
+      </div>
+    </div>
+  `).join('');
+
+  // MITRE grid
+  document.getElementById('report-mitre').innerHTML = MITRE_TECHNIQUES.map(t => `
+    <div class="mitre-item ${t.hit?'hit':''}">
+      <div class="mitre-id">${t.id}</div>
+      <div class="mitre-name">${t.name}</div>
+    </div>
+  `).join('');
+}
+
+function exportReport() {
+  showNotif('📋 Report Exported', 'Security report exported as PDF — check downloads folder.');
+}
+
+// ============================================================
+//  API CALL FLOW DIAGRAM (Canvas-based)
+// ============================================================
+const FLOW_CHAINS = [
+  {
+    name: 'Account Takeover',
+    nodes: [
+      { label: 'Attacker\nIP', type: 'attacker', x: 60, y: 130 },
+      { label: 'POST\n/auth/login\n401×15', type: 'danger', x: 210, y: 60 },
+      { label: 'Rate Limit\nTriggered', type: 'response', x: 360, y: 60 },
+      { label: 'POST\n/auth/login\n200 OK', type: 'warn', x: 210, y: 200 },
+      { label: 'POST\n/auth/refresh', type: 'warn', x: 390, y: 200 },
+      { label: 'GET\n/user/profile', type: 'warn', x: 570, y: 200 },
+      { label: 'POST\n/wallet/withdraw', type: 'danger', x: 750, y: 200 },
+      { label: 'IP\nBLOCKED', type: 'response', x: 750, y: 60 },
+    ],
+    edges: [
+      [0,1,'Flood 15x'],[1,2,'Auto-block'],[0,3,'Success'],[3,4,'Token'],[4,5,'Enum'],[5,6,'Exfil'],[6,7,'Detected']
+    ]
+  },
+  {
+    name: 'Data Exfiltration',
+    nodes: [
+      { label: 'Bot\nAgent', type: 'attacker', x: 60, y: 130 },
+      { label: 'GET\n/orderbook', type: 'warn', x: 200, y: 60 },
+      { label: 'GET\n/prices', type: 'warn', x: 370, y: 60 },
+      { label: 'GET\n/market/summary', type: 'warn', x: 560, y: 60 },
+      { label: 'POST\n/depth', type: 'danger', x: 750, y: 60 },
+      { label: 'CV=0.02\nBot Pattern', type: 'danger', x: 370, y: 190 },
+      { label: 'CAPTCHA\nIssued', type: 'response', x: 570, y: 190 },
+    ],
+    edges: [
+      [0,1,'Sequential'],[1,2,'520ms'],[2,3,'520ms'],[3,4,'Bulk'],[2,5,'Detected'],[5,6,'Block']
+    ]
+  },
+  {
+    name: 'Replay Attack',
+    nodes: [
+      { label: 'Attacker', type: 'attacker', x: 60, y: 130 },
+      { label: 'POST /trade\nnonce:a3f7\n200 OK', type: 'normal', x: 240, y: 130 },
+      { label: 'REPLAY #1\nnonce:a3f7\n403', type: 'danger', x: 430, y: 60 },
+      { label: 'REPLAY #2\nnonce:a3f7\n403', type: 'danger', x: 430, y: 130 },
+      { label: 'REPLAY #3\nnonce:a3f7\n403', type: 'danger', x: 430, y: 200 },
+      { label: 'Nonce\nInvalidated', type: 'response', x: 650, y: 130 },
+      { label: 'Alert\nGenerated', type: 'response', x: 800, y: 130 },
+    ],
+    edges: [
+      [0,1,'Original'],[1,2,'Replay'],[1,3,'Replay'],[1,4,'Replay'],[2,5,'Block'],[3,5,'Block'],[4,5,'Block'],[5,6,'Alert']
+    ]
+  },
+  {
+    name: 'Privilege Escalation',
+    nodes: [
+      { label: 'Stolen\nToken', type: 'attacker', x: 60, y: 130 },
+      { label: 'POST\n/auth/refresh\nForeign IP', type: 'danger', x: 220, y: 130 },
+      { label: 'GET\n/user/profile\nadmin=false', type: 'warn', x: 410, y: 70 },
+      { label: 'PUT\n/user/profile\nrole=admin', type: 'danger', x: 410, y: 190 },
+      { label: 'GET\n/wallet/balance', type: 'danger', x: 620, y: 190 },
+      { label: 'RBAC\nViolation', type: 'response', x: 620, y: 70 },
+      { label: 'Token\nRevoked', type: 'response', x: 800, y: 130 },
+    ],
+    edges: [
+      [0,1,'Reuse'],[1,2,'Enum'],[1,3,'Inject'],[3,4,'Escalate'],[2,5,'Detect'],[3,5,'Block'],[5,6,'Revoke'],[4,6,'Block']
+    ]
+  }
+];
+
+const NODE_COLORS = {
+  attacker: { fill:'#1a0a0f', stroke:'#ff4757', text:'#ff4757' },
+  danger:   { fill:'#1a0505', stroke:'#ff4757', text:'#ff8a8a' },
+  warn:     { fill:'#1a1005', stroke:'#ffa502', text:'#ffa502' },
+  normal:   { fill:'#051015', stroke:'#00e5ff', text:'#00e5ff' },
+  response: { fill:'#051a0f', stroke:'#2ed573', text:'#2ed573' },
+};
+
+let flowAnimTimer = null;
+let flowAnimStep = 0;
+
+function renderFlowDiagram(highlightEdge = -1) {
+  const canvas = document.getElementById('flow-canvas');
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const idx = parseInt(document.getElementById('flow-chain-select')?.value || 0);
+  const chain = FLOW_CHAINS[idx];
+  if(!chain) return;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Background grid
+  ctx.strokeStyle = 'rgba(13,42,63,0.4)';
+  ctx.lineWidth = 1;
+  for(let x=0;x<canvas.width;x+=40){ ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke(); }
+  for(let y=0;y<canvas.height;y+=40){ ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke(); }
+
+  // Draw edges first
+  chain.edges.forEach(([from, to, label], ei) => {
+    const a = chain.nodes[from];
+    const b = chain.nodes[to];
+    const isHighlighted = ei === highlightEdge;
+    const isActive = highlightEdge >= 0 && ei <= highlightEdge;
+
+    ctx.save();
+    ctx.strokeStyle = isHighlighted ? '#00e5ff' : isActive ? 'rgba(255,71,87,0.6)' : 'rgba(13,42,63,0.8)';
+    ctx.lineWidth = isHighlighted ? 2.5 : isActive ? 1.5 : 1;
+    ctx.setLineDash(isHighlighted ? [] : [4, 4]);
+
+    // Draw arrow
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len = Math.sqrt(dx*dx+dy*dy);
+    const ux = dx/len, uy = dy/len;
+    const startX = a.x + ux*42, startY = a.y + uy*28;
+    const endX = b.x - ux*42, endY = b.y - uy*28;
+
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.lineTo(endX, endY);
+    ctx.stroke();
+
+    // Arrowhead
+    if(isActive || isHighlighted) {
+      const angle = Math.atan2(endY-startY, endX-startX);
+      ctx.fillStyle = isHighlighted ? '#00e5ff' : 'rgba(255,71,87,0.8)';
+      ctx.beginPath();
+      ctx.moveTo(endX, endY);
+      ctx.lineTo(endX - 10*Math.cos(angle-0.4), endY - 10*Math.sin(angle-0.4));
+      ctx.lineTo(endX - 10*Math.cos(angle+0.4), endY - 10*Math.sin(angle+0.4));
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Edge label
+    const mx = (startX+endX)/2, my = (startY+endY)/2;
+    ctx.fillStyle = isHighlighted ? '#00e5ff' : 'rgba(74,122,154,0.9)';
+    ctx.font = '9px JetBrains Mono, monospace';
+    ctx.textAlign = 'center';
+    ctx.setLineDash([]);
+    ctx.fillText(label, mx, my - 6);
+    ctx.restore();
+  });
+
+  // Draw nodes
+  chain.nodes.forEach((node, ni) => {
+    const col = NODE_COLORS[node.type];
+    const isActive = highlightEdge >= 0 && chain.edges.slice(0, highlightEdge+1).some(([f,t])=>t===ni||f===ni);
+
+    ctx.save();
+    // Glow
+    if(isActive) {
+      ctx.shadowColor = col.stroke;
+      ctx.shadowBlur = 14;
+    }
+
+    // Box
+    const w = 80, h = 54;
+    ctx.fillStyle = col.fill;
+    ctx.strokeStyle = col.stroke;
+    ctx.lineWidth = isActive ? 2 : 1;
+    roundRect(ctx, node.x - w/2, node.y - h/2, w, h, 6);
+    ctx.fill(); ctx.stroke();
+
+    // Text
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = col.text;
+    ctx.font = `bold 9px JetBrains Mono, monospace`;
+    ctx.textAlign = 'center';
+    const lines = node.label.split('\n');
+    const lineH = 13;
+    const startY = node.y - (lines.length-1)*lineH/2;
+    lines.forEach((line, li) => { ctx.fillText(line, node.x, startY + li*lineH); });
+    ctx.restore();
+  });
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.lineTo(x+w-r, y); ctx.arcTo(x+w, y, x+w, y+r, r);
+  ctx.lineTo(x+w, y+h-r); ctx.arcTo(x+w, y+h, x+w-r, y+h, r);
+  ctx.lineTo(x+r, y+h); ctx.arcTo(x, y+h, x, y+h-r, r);
+  ctx.lineTo(x, y+r); ctx.arcTo(x, y, x+r, y, r);
+  ctx.closePath();
+}
+
+function animateFlow() {
+  if(flowAnimTimer) { clearInterval(flowAnimTimer); flowAnimTimer = null; }
+  const idx = parseInt(document.getElementById('flow-chain-select')?.value || 0);
+  const chain = FLOW_CHAINS[idx];
+  flowAnimStep = -1;
+  renderFlowDiagram(-1);
+
+  flowAnimTimer = setInterval(() => {
+    flowAnimStep++;
+    if(flowAnimStep >= chain.edges.length) {
+      clearInterval(flowAnimTimer); flowAnimTimer = null;
+      return;
+    }
+    renderFlowDiagram(flowAnimStep);
+  }, 600);
+}
+
+// ============================================================
+//  CLOCK
+// ============================================================
+setInterval(() => {
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-GB',{hour12:false});
+}, 1000);
+
+// ============================================================
+//  INIT
+// ============================================================
+renderRules();
+updateTrafficChart();
+
+// Seed some initial data
+for(let i=0;i<20;i++) processLog(generateLog());
+
+// Pre-render flow diagram (runs after DOM ready)
+setTimeout(() => renderFlowDiagram(), 200);
+</script>
+</body>
+</html>
